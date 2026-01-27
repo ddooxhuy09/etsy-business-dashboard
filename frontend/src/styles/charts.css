@@ -1,0 +1,35 @@
+.charts-page {
+  padding: 12px 12px 24px;
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+.charts-filters {
+  margin-bottom: 16px;
+  border-radius: 10px;
+}
+
+.charts-section {
+  margin-bottom: 16px;
+  border-radius: 10px;
+}
+
+.charts-empty {
+  height: 220px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #999;
+  background: #fafafa;
+  border-radius: 8px;
+  border: 1px dashed #e5e7eb;
+}
+
+.charts-kpi .ant-card {
+  border-radius: 10px;
+}
+
+.plotly-wrap {
+  width: 100%;
+}
+
