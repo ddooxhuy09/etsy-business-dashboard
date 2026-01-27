@@ -7,7 +7,6 @@ __pycache__/
 .Python
 *.so
 *.egg-info/
-dist/
 build/
 *.egg
 
@@ -20,7 +19,6 @@ ENV/
 # Node.js / Frontend
 node_modules/
 frontend/node_modules/
-# frontend/dist/ - Keep this for server to serve static files
 frontend/build/
 frontend/.vite/
 frontend/.cache/
