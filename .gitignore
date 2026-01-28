@@ -62,9 +62,7 @@ Thumbs.db
 *.app
 *.spec
 build/dashboard-app/
-dist/
 dist/dashboard-app/
-frontend/dist/
 
 # OS
 .DS_Store
