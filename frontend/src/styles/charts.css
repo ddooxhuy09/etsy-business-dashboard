@@ -1,7 +1,9 @@
 .charts-page {
-  padding: 12px 12px 24px;
+  padding: 0 8px 24px;
   max-width: 1400px;
   margin: 0 auto;
+  min-height: 100%;
+  background: #fafafa;
 }
 
 .charts-filters {
@@ -15,7 +17,7 @@
 }
 
 .charts-empty {
-  height: 220px;
+  height: 192px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -33,3 +35,42 @@
   width: 100%;
 }
 
+.chart-container {
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+  transition: box-shadow 0.2s;
+}
+.chart-container:hover {
+  box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+}
+
+.plotly-chart-wrapper {
+  border-radius: 8px;
+  overflow: hidden;
+  background: #fff;
+  padding: 8px;
+}
+.plotly-chart-wrapper .js-plotly-plot {
+  border-radius: 8px;
+}
+
+.kpi-card {
+  transition: box-shadow 0.2s;
+}
+.kpi-card:hover {
+  box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+}
+
+.charts-grid-2 { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; }
+.charts-grid-1-2 { display: grid; grid-template-columns: 1fr 2fr; gap: 16px; }
+.charts-grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+.charts-cmp-cols { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+@media (max-width: 991px) {
+  .charts-grid-2, .charts-grid-1-2, .charts-grid-3 { grid-template-columns: 1fr; }
+  .charts-cmp-cols { grid-template-columns: 1fr; }
+}
+
+.kpi-label { font-size: 11px; font-weight: 600; color: #888; text-transform: uppercase; letter-spacing: 0.05em; }
+.kpi-value { font-size: 20px; font-weight: 700; }
+.kpi-sub { font-size: 10px; color: #999; margin-top: 4px; }

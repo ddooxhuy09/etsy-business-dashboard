@@ -1,6 +1,4 @@
-import axios from 'axios';
-
-const api = axios.create({ baseURL: import.meta.env.VITE_API_BASE || '' });
+import api from '../lib/axios';
 
 // Product Catalog API
 export function fetchProductCatalog({ limit = 100, offset = 0, search, sort_by, sort_order } = {}) {

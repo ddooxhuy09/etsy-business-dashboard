@@ -1,6 +1,4 @@
-import axios from 'axios';
-
-const API = axios.create({ baseURL: import.meta.env.VITE_API_BASE || '' });
+import API from '../lib/axios';
 
 function params(p) {
   const q = { ...p };

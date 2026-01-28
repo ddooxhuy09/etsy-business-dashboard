@@ -1,10 +1,4 @@
-import axios from 'axios';
-
-const API_BASE = import.meta.env.VITE_API_BASE || '';
-
-export const api = axios.create({
-  baseURL: API_BASE,
-});
+import api from '../lib/axios';
 
 export async function fetchProducts() {
   const { data } = await api.get('/api/products');

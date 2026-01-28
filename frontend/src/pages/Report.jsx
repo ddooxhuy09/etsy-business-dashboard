@@ -353,7 +353,7 @@ export default function Report() {
               value={stmtSearchText}
               onChange={(e) => {
                 setStmtSearchText(e.target.value);
-                setStmtPage(1); // Reset to first page when searching
+                setStmtPage(1);
               }}
               style={{ width: 300 }}
               enterButton={<SearchOutlined />}

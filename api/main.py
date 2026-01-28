@@ -24,6 +24,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
+from api.auth_middleware import AuthMiddleware
 
 from api.product_cost.routes import register_routes as register_product_cost_routes
 from api.charts_routes import router as charts_router
@@ -32,9 +33,11 @@ from api.reports_routes import router as reports_router
 from api.import_routes import router as import_router
 from api.static_data_routes import router as static_data_router
 from api.static_data_import_routes import router as static_data_import_router
+from api.auth_routes import router as auth_router
 
 app = FastAPI(title="Dashboard API", version="0.1.0")
 
+# CORS middleware (must be first)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -42,6 +45,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Auth middleware (protects all /api/* routes except /api/auth/*)
+app.add_middleware(AuthMiddleware)
 
 # Product Cost: /api/products, /api/products/{id}/variants, cogs_breakdown, etsy_fee_breakdown, margin_breakdown, /api/cache/clear, /api/health
 register_product_cost_routes(app)
@@ -62,6 +68,8 @@ app.include_router(import_router)
 app.include_router(static_data_router)
 # Static Data Import: /api/static/product-catalog/upload, /api/static/bank-transactions/upload
 app.include_router(static_data_import_router)
+# Auth: /api/auth/me, /api/auth/verify (public, no auth required)
+app.include_router(auth_router)
 
 
 def _get_frontend_dist() -> Path | None:

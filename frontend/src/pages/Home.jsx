@@ -64,8 +64,25 @@ export default function Home() {
         setYear(y);
         setMonth(m);
       })
-      .catch(() => {
-        message.error('Không tải được danh sách kỳ dữ liệu');
+      .catch((error) => {
+        const status = error?.response?.status;
+        const detail = error?.response?.data?.detail || error?.message || 'Unknown error';
+        if (status === 401) {
+          Modal.error({
+            title: 'Lỗi xác thực (401 Unauthorized)',
+            content: (
+              <div>
+                <p><strong>Nguyên nhân:</strong> Token JWT không hợp lệ, đã hết hạn, hoặc không được gửi kèm request.</p>
+                <p><strong>URL:</strong> /api/import/periods</p>
+                <p><strong>Chi tiết:</strong> {detail}</p>
+                <p><strong>Giải pháp:</strong> Vui lòng đăng nhập lại để lấy token mới.</p>
+              </div>
+            ),
+            width: 600,
+          });
+        } else {
+          message.error(`Không tải được danh sách kỳ dữ liệu: ${detail}`);
+        }
       });
   }, []);
 
@@ -74,7 +91,26 @@ export default function Home() {
     setLoading(true);
     fetchImportFiles(year, month)
       .then((r) => setFileStatus(r))
-      .catch(() => message.error('Không tải được danh sách file'))
+      .catch((error) => {
+        const status = error?.response?.status;
+        const detail = error?.response?.data?.detail || error?.message || 'Unknown error';
+        if (status === 401) {
+          Modal.error({
+            title: 'Lỗi xác thực (401 Unauthorized)',
+            content: (
+              <div>
+                <p><strong>Nguyên nhân:</strong> Token JWT không hợp lệ, đã hết hạn, hoặc không được gửi kèm request.</p>
+                <p><strong>URL:</strong> /api/import/files</p>
+                <p><strong>Chi tiết:</strong> {detail}</p>
+                <p><strong>Giải pháp:</strong> Vui lòng đăng nhập lại để lấy token mới.</p>
+              </div>
+            ),
+            width: 600,
+          });
+        } else {
+          message.error(`Không tải được danh sách file: ${detail}`);
+        }
+      })
       .finally(() => setLoading(false));
   }, [year, month]);
 
@@ -420,6 +456,7 @@ export default function Home() {
             dataSource={periodRows}
             pagination={false}
             size="small"
+            scroll={{ x: 'max-content' }}
             onRow={(record) => ({
               onClick: () => handleSelectPeriod(record.period),
               style: { cursor: 'pointer', background: period === record.period ? '#e6f7ff' : 'transparent' },
@@ -438,7 +475,14 @@ export default function Home() {
             </p>
 
             <Spin spinning={loading}>
-              <Table columns={fileTableCols} dataSource={fileTableRows} pagination={false} size="small" style={{ marginBottom: 16 }} />
+              <Table
+                columns={fileTableCols}
+                dataSource={fileTableRows}
+                pagination={false}
+                size="small"
+                scroll={{ x: 'max-content' }}
+                style={{ marginBottom: 16 }}
+              />
             </Spin>
 
             <div style={{ marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
