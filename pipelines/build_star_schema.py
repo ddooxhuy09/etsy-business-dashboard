@@ -29,16 +29,14 @@ def build_star_schema(datasets: Dict[str, pd.DataFrame], *, save: bool = True) -
     builder = StarSchema()
     star_schema = builder.build_complete_star_schema(datasets)
     if save:
-        builder.save_star_schema(star_schema, 
-                               postgres_clear_existing=True)
+        builder.save_star_schema(star_schema, postgres_clear_existing=False)
     return star_schema
 
 
 def save_star_schema(star_schema: Dict[str, pd.DataFrame]) -> Dict[str, bool]:
-    """Persist built star schema to PostgreSQL."""
+    """Persist built star schema to PostgreSQL. Luôn append, không clear."""
     builder = StarSchema()
-    return builder.save_star_schema(star_schema, 
-                                   postgres_clear_existing=True)
+    return builder.save_star_schema(star_schema, postgres_clear_existing=False)
 
 
 def build_and_save_star_schema(datasets: Dict[str, pd.DataFrame]) -> Dict[str, pd.DataFrame]:

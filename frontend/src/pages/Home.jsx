@@ -60,7 +60,7 @@ export default function Home() {
         setPeriodMetadata(metadata);
         const latest = ps[ps.length - 1];
         setPeriod((prev) => prev || latest);
-        const [y, m] = ((prev) => prev || latest)(null).split('-').map((v) => parseInt(v, 10));
+        const [y, m] = latest.split('-').map((v) => parseInt(v, 10));
         setYear(y);
         setMonth(m);
       })
@@ -86,10 +86,13 @@ export default function Home() {
       });
   }, []);
 
+  // Fetch files chỉ khi đổi kỳ (chọn trong bảng hoặc tạo kỳ mới). Đổi year/month dropdown không reset kỳ.
   useEffect(() => {
-    if (!year || !month) return;
+    if (!period) return;
+    const [y, m] = period.split('-').map((v) => parseInt(v, 10));
+    if (!y || !m) return;
     setLoading(true);
-    fetchImportFiles(year, month)
+    fetchImportFiles(y, m)
       .then((r) => setFileStatus(r))
       .catch((error) => {
         const status = error?.response?.status;
@@ -112,7 +115,7 @@ export default function Home() {
         }
       })
       .finally(() => setLoading(false));
-  }, [year, month]);
+  }, [period]);
 
   const handleSelectPeriod = (p) => {
     setPeriod(p);
@@ -158,7 +161,7 @@ export default function Home() {
     setUploading(true);
     setUploadValidation(null);
     try {
-      const r = await uploadImportFiles(year, month, toSend);
+      const r = await uploadImportFiles(periodYear, periodMonth, toSend);
       const validation = r.validation || {};
       const hasErrors = Object.values(validation).some((v) => !v.ok && v.errors?.length > 0);
 
@@ -174,7 +177,7 @@ export default function Home() {
           message.success(`Đã lưu ${savedCount} file`);
           setSelectedFiles({});
           setUploadKey((k) => k + 1);
-          const st = await fetchImportFiles(year, month);
+          const st = await fetchImportFiles(periodYear, periodMonth);
           setFileStatus(st);
         } else {
           message.warning('Không có file nào được lưu');
@@ -196,11 +199,11 @@ export default function Home() {
     setEtlLoading(true);
     setEtlResult(null);
     try {
-      const r = await runImportEtl(year, month, { force: false });
+      const r = await runImportEtl(periodYear, periodMonth, { force: false });
       setEtlResult(r);
         if (r.ok) {
           message.success(r.skipped ? 'Đã bỏ qua (không thay đổi)' : 'Process chạy xong');
-          const st = await fetchImportFiles(year, month);
+          const st = await fetchImportFiles(periodYear, periodMonth);
           setFileStatus(st);
           // Reload metadata để cập nhật etl_done_at cho period này
           fetchImportPeriods()
@@ -223,9 +226,9 @@ export default function Home() {
     const deleteKey = `${key}:${filename}`;
     setDeletingFiles((prev) => new Set(prev).add(deleteKey));
     try {
-      await deleteImportFile(year, month, key, filename);
+      await deleteImportFile(periodYear, periodMonth, key, filename);
       message.success(`Đã xóa file ${filename}`);
-      const st = await fetchImportFiles(year, month);
+      const st = await fetchImportFiles(periodYear, periodMonth);
       setFileStatus(st);
     } catch (e) {
       message.error(e?.response?.data?.detail || 'Xóa file thất bại');
@@ -238,6 +241,9 @@ export default function Home() {
     }
   };
 
+  const [periodYear, periodMonth] = period
+    ? period.split('-').map((v) => parseInt(v, 10))
+    : [null, null];
   const periodDisplay = period || `${year}-${String(month).padStart(2, '0')}`;
 
   // Directory listing columns for periods
@@ -386,7 +392,7 @@ export default function Home() {
   const fileTableRows = FILE_ORDER.map((key) => ({
     key,
     displayName: FILE_DISPLAY_NAMES[key] || key,
-    filename: fileStatus?.files?.[key]?.filename || fmtFilename(key, year, month),
+    filename: fileStatus?.files?.[key]?.filename || fmtFilename(key, periodYear ?? year, periodMonth ?? month),
     exists: fileStatus?.files?.[key]?.exists ?? false,
     size: fileStatus?.files?.[key]?.size ?? 0,
     uploaded_at: fileStatus?.files?.[key]?.uploaded_at,

@@ -68,6 +68,34 @@ def _filename_default(key: str, year: int, month: int) -> str:
     return ""
 
 
+def _matches_key(key: str, filename: str) -> bool:
+    """Kiểm tra filename có thuộc loại key không (pattern match, thống nhất với csv_loader)."""
+    if not filename or not filename.lower().endswith(".csv"):
+        return False
+    if key == "listing":
+        return filename == "EtsyListingsDownload.csv"
+    if key == "statement":
+        return filename.startswith("etsy_statement_")
+    if key == "direct_checkout":
+        return "EtsyDirectCheckoutPayments" in filename
+    if key == "sold_order_items":
+        return "EtsySoldOrderItems" in filename
+    if key == "sold_orders":
+        return filename.startswith("EtsySoldOrders") and "EtsySoldOrderItems" not in filename
+    if key == "deposits":
+        return filename.startswith("EtsyDeposits")
+    return False
+
+
+def _find_files_by_pattern(key: str, storage_file_map: dict) -> list:
+    """Tìm các file trong folder khớp loại key (khi không có manifest / exact default)."""
+    out = []
+    for fname, size in storage_file_map.items():
+        if _matches_key(key, fname):
+            out.append({"filename": fname, "size": size})
+    return out
+
+
 def _manifest_entries(ent) -> list:
     """Chuyển manifest entry (dict cũ hoặc list) thành list [{filename, size?, uploaded_at?}]."""
     if not ent:
@@ -210,10 +238,15 @@ def _get_file_snapshot(year: int, month: int) -> dict:
     for key, _ in FILE_KEYS:
         entries = _manifest_entries(man.get(key))
         if not entries:
-            # Fallback: file mặc định
+            # Fallback 1: tên mặc định đúng year-month
             fname = _filename_default(key, year, month)
             if fname and fname in storage_file_map:
                 out[key] = [{"filename": fname, "size": storage_file_map[fname]}]
+                continue
+            # Fallback 2: pattern match (vd. folder 2026-02 có file etsy_statement_2025_2.csv vẫn coi là có)
+            found = _find_files_by_pattern(key, storage_file_map)
+            if found:
+                out[key] = found
             continue
         arr = []
         for e in entries:
@@ -282,8 +315,13 @@ def list_files(
             if fname and fname in storage_file_map:
                 entries = [{"filename": fname, "size": storage_file_map[fname], "uploaded_at": None}]
             else:
-                out[key] = {"filename": fname or "", "exists": False, "size": 0, "uploaded_at": None, "files": []}
-                continue
+                # Pattern match: folder có file cùng loại (vd. 2025-2) vẫn hiển thị "Đã có"
+                found = _find_files_by_pattern(key, storage_file_map)
+                if found:
+                    entries = [{"filename": e["filename"], "size": e["size"], "uploaded_at": None} for e in found]
+                else:
+                    out[key] = {"filename": fname or "", "exists": False, "size": 0, "uploaded_at": None, "files": []}
+                    continue
         files = []
         total_size = 0
         any_exists = False

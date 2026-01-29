@@ -204,8 +204,8 @@ CREATE TABLE IF NOT EXISTS dim_geography (
     -- Primary Key
     geography_key BIGSERIAL PRIMARY KEY,
 
-    -- Location Hash for efficient lookups
-    location_hash VARCHAR(32),
+    -- Location Hash for efficient lookups (UNIQUE for upsert support)
+    location_hash VARCHAR(32) UNIQUE,
 
     -- Address Components
     country_name TEXT NOT NULL,
@@ -544,6 +544,7 @@ CREATE INDEX IF NOT EXISTS idx_dim_order_type ON dim_order(order_type);
 -- Geography Dimension Indexes
 CREATE INDEX IF NOT EXISTS idx_dim_geography_country ON dim_geography(country_name);
 CREATE INDEX IF NOT EXISTS idx_dim_geography_market ON dim_geography(etsy_market);
+CREATE INDEX IF NOT EXISTS idx_dim_geography_location_hash ON dim_geography(location_hash);
 
 -- Sales Fact Indexes (Most Important)
 CREATE INDEX IF NOT EXISTS idx_fact_sales_product ON fact_sales(product_key);

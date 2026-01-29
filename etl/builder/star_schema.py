@@ -329,15 +329,15 @@ class StarSchema:
 
     def save_star_schema(self, star_schema: Dict[str, pd.DataFrame], 
                         postgres_clear_existing: bool = False) -> Dict[str, bool]:
-        """Save star schema vào PostgreSQL database."""
+        """Save star schema vào PostgreSQL database. Luôn append, không clear."""
         results = {}
         db_client = get_db_client()
         logger.info("🗄️ Loading star schema to database...")
-
+        # Luôn append (clear_existing=False). dim_time upsert; fact_bank_transactions giữ nguyên.
         if db_client.connect():
             try:
                 load_results = db_client.load_star_schema(
-                    star_schema, if_exists="append", clear_existing=postgres_clear_existing
+                    star_schema, if_exists="append", clear_existing=False
                 )
                 for table_name, success in load_results.items():
                     results[table_name] = success

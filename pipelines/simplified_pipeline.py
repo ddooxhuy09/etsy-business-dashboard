@@ -66,7 +66,8 @@ class SimplifiedETLPipeline:
 
         builder = StarSchema()
         star = builder.build_complete_star_schema(cleaned)
-        results = builder.save_star_schema(star, postgres_clear_existing=self.clean_existing)
+        # Luôn append, không clear (dim_time upsert; fact_bank_transactions giữ nguyên).
+        results = builder.save_star_schema(star, postgres_clear_existing=False)
         ok = bool(results) and all(results.values())
         logger.info("ETL finished ok=%s", ok)
         return ok
