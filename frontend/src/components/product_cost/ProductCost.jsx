@@ -3,6 +3,8 @@ import { Link } from 'react-router-dom';
 import { Table, Typography, Tag, message, Input, Space } from 'antd';
 import { fetchProducts, fetchVariants } from '../../api/productCost';
 import { LinkOutlined } from '@ant-design/icons';
+import TableColumnTitle from '../TableColumnTitle';
+import { PRODUCT_COST_COLUMN_ANNOTATIONS } from '../../constants/tableColumnAnnotations';
 
 const { Text, Title } = Typography;
 
@@ -43,12 +45,12 @@ function VariantsTable({ productId }) {
 
     const columns = [
         {
-            title: 'Variant',
+            title: <TableColumnTitle title="Variant" annotation={{ title: 'Variant', content: <div style={{ fontSize: 13 }}>Tên biến thể sản phẩm (từ dim_product_catalog)</div> }} />,
             dataIndex: 'variant',
             className: 'variant-name-cell',
         },
         {
-            title: 'COGS',
+            title: <TableColumnTitle title="COGS" annotation={PRODUCT_COST_COLUMN_ANNOTATIONS['COGS']} />,
             dataIndex: 'cogs',
             align: 'right',
             render: (v) => <span className="money-cell">${formatMoney(v)}</span>,
@@ -127,7 +129,7 @@ export default function ProductCost() {
 
     const columns = [
         {
-            title: 'Product Line',
+            title: <TableColumnTitle title="Product Line" annotation={PRODUCT_COST_COLUMN_ANNOTATIONS['Product Line']} />,
             dataIndex: 'product_line_id',
             width: 130,
             sorter: (a, b) => (a.product_line_id || '').localeCompare(b.product_line_id || ''),
@@ -145,7 +147,7 @@ export default function ProductCost() {
             ),
         },
         {
-            title: 'Product Name',
+            title: <TableColumnTitle title="Product Name" annotation={PRODUCT_COST_COLUMN_ANNOTATIONS['Product Name']} />,
             dataIndex: 'product_name',
             ellipsis: true,
             sorter: (a, b) => (a.product_name || '').localeCompare(b.product_name || ''),
@@ -162,14 +164,14 @@ export default function ProductCost() {
             },
         },
         {
-            title: 'Product ID',
+            title: <TableColumnTitle title="Product ID" annotation={PRODUCT_COST_COLUMN_ANNOTATIONS['Product ID']} />,
             dataIndex: 'product_id',
             width: 140,
             className: 'product-id-cell',
             sorter: (a, b) => (a.product_id || '').localeCompare(b.product_id || ''),
         },
         {
-            title: 'Sales',
+            title: <TableColumnTitle title="Sales" annotation={PRODUCT_COST_COLUMN_ANNOTATIONS['Sales']} />,
             dataIndex: 'sales',
             align: 'right',
             width: 110,
@@ -178,7 +180,7 @@ export default function ProductCost() {
             render: (v) => <span className="money-cell positive">${formatMoney(v)}</span>,
         },
         {
-            title: 'Refund',
+            title: <TableColumnTitle title="Refund" annotation={PRODUCT_COST_COLUMN_ANNOTATIONS['Refund']} />,
             dataIndex: 'refund',
             align: 'right',
             width: 100,
@@ -190,7 +192,7 @@ export default function ProductCost() {
             ),
         },
         {
-            title: 'Units',
+            title: <TableColumnTitle title="Units" annotation={PRODUCT_COST_COLUMN_ANNOTATIONS['Units']} />,
             dataIndex: 'unit',
             align: 'center',
             width: 70,
@@ -198,7 +200,7 @@ export default function ProductCost() {
             sorter: (a, b) => (a.unit || 0) - (b.unit || 0),
         },
         {
-            title: 'COGS',
+            title: <TableColumnTitle title="COGS" annotation={PRODUCT_COST_COLUMN_ANNOTATIONS['COGS']} />,
             dataIndex: 'cogs',
             align: 'right',
             width: 100,
@@ -206,7 +208,7 @@ export default function ProductCost() {
             render: (v) => <span className="money-cell expense">${formatMoney(v)}</span>,
         },
         {
-            title: 'Etsy Fee',
+            title: <TableColumnTitle title="Etsy Fee" annotation={PRODUCT_COST_COLUMN_ANNOTATIONS['Etsy Fee']} />,
             dataIndex: 'etsy_fee',
             align: 'right',
             width: 100,
@@ -214,7 +216,7 @@ export default function ProductCost() {
             render: (v) => <span className="money-cell expense">${formatMoney(v)}</span>,
         },
         {
-            title: 'Profit',
+            title: <TableColumnTitle title="Profit" annotation={PRODUCT_COST_COLUMN_ANNOTATIONS['Profit']} />,
             dataIndex: 'profit',
             align: 'right',
             width: 110,
@@ -226,7 +228,7 @@ export default function ProductCost() {
             ),
         },
         {
-            title: 'Margin %',
+            title: <TableColumnTitle title="Margin %" annotation={PRODUCT_COST_COLUMN_ANNOTATIONS['Margin %']} />,
             key: 'margin',
             align: 'right',
             width: 90,

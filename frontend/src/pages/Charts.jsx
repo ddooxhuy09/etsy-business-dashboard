@@ -1,6 +1,8 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { DatePicker, Select, InputNumber, Spin, Card, Row, Col, Space } from 'antd';
+import { DatePicker, Select, InputNumber, Spin, Card, Row, Col, Space, Button, Popover } from 'antd';
+import { InfoCircleOutlined } from '@ant-design/icons';
 import createPlotlyComponent from 'react-plotly.js/factory';
+import { CHART_ANNOTATIONS } from '../constants/chartAnnotations';
 import Plotly from 'plotly.js-dist-min';
 import * as ChartsApi from '../api/charts';
 import '../styles/charts.css';
@@ -8,6 +10,16 @@ import '../styles/charts.css';
 const Plot = createPlotlyComponent(Plotly);
 
 const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+
+function ChartAnnotationButton({ annotationKey }) {
+  const ann = CHART_ANNOTATIONS[annotationKey];
+  if (!ann) return null;
+  return (
+    <Popover content={ann.content} title={ann.title} trigger="click" placement="leftBottom">
+      <Button type="text" size="small" icon={<InfoCircleOutlined />} title="Xem công thức tính" style={{ color: '#1890ff' }} />
+    </Popover>
+  );
+}
 
 function toYMD(d) {
   if (!d) return null;
@@ -263,38 +275,58 @@ export default function Charts() {
       <Row gutter={[16, 16]} className="charts-kpi" style={{ marginBottom: 16 }}>
         <Col span={12}>
           <Card size="small" className="kpi-card">
-            <div className="kpi-label">Doanh thu</div>
+            <div style={{ position: 'relative' }}>
+              <div style={{ position: 'absolute', top: 0, right: 0, zIndex: 1 }}>
+                <ChartAnnotationButton annotationKey="totalRevenue" />
+              </div>
+              <div className="kpi-label">Doanh thu</div>
             <Spin spinning={kpiLoad}>
               <div className="kpi-value">{kpi.revenue != null ? `$${Number(kpi.revenue).toLocaleString('en-US', { minimumFractionDigits: 2 })}` : '—'}</div>
             </Spin>
-            <div className="kpi-sub">Tổng doanh thu</div>
+              <div className="kpi-sub">Tổng doanh thu</div>
+            </div>
           </Card>
         </Col>
         <Col span={12}>
           <Card size="small" className="kpi-card">
-            <div className="kpi-label">Đơn hàng</div>
+            <div style={{ position: 'relative' }}>
+              <div style={{ position: 'absolute', top: 0, right: 0, zIndex: 1 }}>
+                <ChartAnnotationButton annotationKey="totalOrders" />
+              </div>
+              <div className="kpi-label">Đơn hàng</div>
             <Spin spinning={kpiLoad}>
               <div className="kpi-value">{kpi.orders != null ? Number(kpi.orders).toLocaleString() : '—'}</div>
             </Spin>
-            <div className="kpi-sub">Tổng số đơn hàng</div>
+              <div className="kpi-sub">Tổng số đơn hàng</div>
+            </div>
           </Card>
         </Col>
         <Col span={12}>
           <Card size="small" className="kpi-card">
-            <div className="kpi-label">Khách hàng</div>
+            <div style={{ position: 'relative' }}>
+              <div style={{ position: 'absolute', top: 0, right: 0, zIndex: 1 }}>
+                <ChartAnnotationButton annotationKey="totalCustomers" />
+              </div>
+              <div className="kpi-label">Khách hàng</div>
             <Spin spinning={kpiLoad}>
               <div className="kpi-value">{kpi.customers != null ? Number(kpi.customers).toLocaleString() : '—'}</div>
             </Spin>
-            <div className="kpi-sub">Tổng số khách hàng</div>
+              <div className="kpi-sub">Tổng số khách hàng</div>
+            </div>
           </Card>
         </Col>
         <Col span={12}>
           <Card size="small" className="kpi-card">
-            <div className="kpi-label">AOV</div>
+            <div style={{ position: 'relative' }}>
+              <div style={{ position: 'absolute', top: 0, right: 0, zIndex: 1 }}>
+                <ChartAnnotationButton annotationKey="aov" />
+              </div>
+              <div className="kpi-label">AOV</div>
             <Spin spinning={kpiLoad}>
               <div className="kpi-value">{kpi.aov != null ? `$${Number(kpi.aov).toLocaleString('en-US', { minimumFractionDigits: 2 })}` : '—'}</div>
             </Spin>
-            <div className="kpi-sub">Giá trị đơn hàng trung bình</div>
+              <div className="kpi-sub">Giá trị đơn hàng trung bình</div>
+            </div>
           </Card>
         </Col>
       </Row>
@@ -302,7 +334,11 @@ export default function Charts() {
       <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
         <Col span={12}>
           <Card title="Revenue by Month" className="chart-container">
-            <Spin spinning={revLoad}>
+            <div style={{ position: 'relative' }}>
+              <div style={{ position: 'absolute', top: 0, right: 0, zIndex: 1 }}>
+                <ChartAnnotationButton annotationKey="revenueByMonth" />
+              </div>
+              <Spin spinning={revLoad}>
               {revMonth.length > 0 ? (
                 <div className="plotly-chart-wrapper">
                   <Plot
@@ -314,12 +350,17 @@ export default function Charts() {
               ) : (
                 <div className="charts-empty">No data</div>
               )}
-            </Spin>
+              </Spin>
+            </div>
           </Card>
         </Col>
         <Col span={12}>
           <Card title="Profit by Month" className="chart-container">
-            <Spin spinning={profitLoad}>
+            <div style={{ position: 'relative' }}>
+              <div style={{ position: 'absolute', top: 0, right: 0, zIndex: 1 }}>
+                <ChartAnnotationButton annotationKey="profitByMonth" />
+              </div>
+              <Spin spinning={profitLoad}>
               {profitMonth.length > 0 ? (
                 <div className="plotly-chart-wrapper">
                   <Plot
@@ -331,7 +372,8 @@ export default function Charts() {
               ) : (
                 <div className="charts-empty">No data</div>
               )}
-            </Spin>
+              </Spin>
+            </div>
           </Card>
         </Col>
       </Row>
@@ -339,7 +381,11 @@ export default function Charts() {
       <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
         <Col span={12}>
           <Card title="New vs Returning Customer Sales" className="chart-container">
-            <Spin spinning={nrLoad}>
+            <div style={{ position: 'relative' }}>
+              <div style={{ position: 'absolute', top: 0, right: 0, zIndex: 1 }}>
+                <ChartAnnotationButton annotationKey="newVsReturning" />
+              </div>
+              <Spin spinning={nrLoad}>
               {newReturn.length > 0 ? (
                 <div className="plotly-chart-wrapper">
                   <Plot
@@ -351,12 +397,17 @@ export default function Charts() {
               ) : (
                 <div className="charts-empty">No data</div>
               )}
-            </Spin>
+              </Spin>
+            </div>
           </Card>
         </Col>
         <Col span={12}>
           <Card title="New Customers Over Time" className="chart-container">
-            <Spin spinning={ncLoad}>
+            <div style={{ position: 'relative' }}>
+              <div style={{ position: 'absolute', top: 0, right: 0, zIndex: 1 }}>
+                <ChartAnnotationButton annotationKey="newCustomersOverTime" />
+              </div>
+              <Spin spinning={ncLoad}>
               {newCust.length > 0 ? (
                 <div className="plotly-chart-wrapper">
                   <Plot
@@ -368,13 +419,18 @@ export default function Charts() {
               ) : (
                 <div className="charts-empty">No data</div>
               )}
-            </Spin>
+              </Spin>
+            </div>
           </Card>
         </Col>
       </Row>
 
       <Card title="Customers by Location (US States)" className="chart-container" style={{ marginBottom: 16 }}>
-        <Spin spinning={locLoad}>
+        <div style={{ position: 'relative' }}>
+          <div style={{ position: 'absolute', top: 0, right: 0, zIndex: 1 }}>
+            <ChartAnnotationButton annotationKey="customersByLocation" />
+          </div>
+          <Spin spinning={locLoad}>
           {byLoc.length > 0 ? (
             <div className="plotly-chart-wrapper">
               <Plot
@@ -386,12 +442,17 @@ export default function Charts() {
           ) : (
             <div className="charts-empty">No data</div>
           )}
-        </Spin>
+          </Spin>
+        </div>
       </Card>
 
       <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
         <Col span={8}>
           <Card title="Customer Retention Rate" className="chart-container">
+            <div style={{ position: 'relative' }}>
+              <div style={{ position: 'absolute', top: 0, right: 0, zIndex: 1 }}>
+                <ChartAnnotationButton annotationKey="retention" />
+              </div>
             <Spin spinning={retLoad}>
               <div style={{ textAlign: 'center', padding: '32px 0' }}>
                 <div style={{ fontSize: 28, fontWeight: 700, color: '#1890ff' }}>
@@ -400,11 +461,16 @@ export default function Charts() {
                 <div style={{ fontSize: 12, color: '#999', marginTop: 8 }}>Retention (%)</div>
               </div>
             </Spin>
+            </div>
           </Card>
         </Col>
         <Col span={16}>
           <Card title="Top 10 Products by Revenue" className="chart-container">
-            <Spin spinning={prodLoad}>
+            <div style={{ position: 'relative' }}>
+              <div style={{ position: 'absolute', top: 0, right: 0, zIndex: 1 }}>
+                <ChartAnnotationButton annotationKey="salesByProduct" />
+              </div>
+              <Spin spinning={prodLoad}>
               {byProd.length > 0 ? (
                 <div className="plotly-chart-wrapper">
                   <Plot
@@ -416,7 +482,8 @@ export default function Charts() {
               ) : (
                 <div className="charts-empty">No data</div>
               )}
-            </Spin>
+              </Spin>
+            </div>
           </Card>
         </Col>
       </Row>
@@ -424,6 +491,10 @@ export default function Charts() {
       <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
         <Col span={12}>
           <Card title="Customer Acquisition Cost (CAC)" className="chart-container">
+            <div style={{ position: 'relative' }}>
+              <div style={{ position: 'absolute', top: 0, right: 0, zIndex: 1 }}>
+                <ChartAnnotationButton annotationKey="cac" />
+              </div>
             <Spin spinning={cacLoad}>
               <div style={{ textAlign: 'center', padding: '32px 0' }}>
                 <div style={{ fontSize: 28, fontWeight: 700, color: '#9c27b0' }}>
@@ -432,10 +503,15 @@ export default function Charts() {
                 <div style={{ fontSize: 12, color: '#999', marginTop: 8 }}>CAC (USD)</div>
               </div>
             </Spin>
+            </div>
           </Card>
         </Col>
         <Col span={12}>
           <Card title="Customer Lifetime Value (CLV)" className="chart-container">
+            <div style={{ position: 'relative' }}>
+              <div style={{ position: 'absolute', top: 0, right: 0, zIndex: 1 }}>
+                <ChartAnnotationButton annotationKey="clv" />
+              </div>
             <Spin spinning={clvLoad}>
               <div style={{ textAlign: 'center', padding: '32px 0' }}>
                 <div style={{ fontSize: 28, fontWeight: 700, color: '#00bcd4' }}>
@@ -444,11 +520,16 @@ export default function Charts() {
                 <div style={{ fontSize: 12, color: '#999', marginTop: 8 }}>CLV (USD)</div>
               </div>
             </Spin>
+            </div>
           </Card>
         </Col>
       </Row>
 
       <Card title="Monthly CAC vs CLV with CLV/CAC Ratio" className="chart-container" style={{ marginBottom: 16 }}>
+        <div style={{ position: 'relative' }}>
+          <div style={{ position: 'absolute', top: 0, right: 0, zIndex: 1 }}>
+            <ChartAnnotationButton annotationKey="cacClvRatio" />
+          </div>
         <Spin spinning={cacClvLoad}>
           {cacClv.length > 0 ? (
             <div className="plotly-chart-wrapper">
@@ -466,11 +547,16 @@ export default function Charts() {
             <div className="charts-empty">No data</div>
           )}
         </Spin>
+        </div>
       </Card>
 
       <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
         <Col span={12}>
           <Card title="Total Orders by Month" className="chart-container">
+            <div style={{ position: 'relative' }}>
+              <div style={{ position: 'absolute', top: 0, right: 0, zIndex: 1 }}>
+                <ChartAnnotationButton annotationKey="ordersByMonth" />
+              </div>
             <Spin spinning={ordLoad}>
               {ordMonth.length > 0 ? (
                 <div className="plotly-chart-wrapper">
@@ -483,11 +569,16 @@ export default function Charts() {
               ) : (
                 <div className="charts-empty">No data</div>
               )}
-            </Spin>
+              </Spin>
+            </div>
           </Card>
         </Col>
         <Col span={12}>
           <Card title="Average Order Value Over Time" className="chart-container">
+            <div style={{ position: 'relative' }}>
+              <div style={{ position: 'absolute', top: 0, right: 0, zIndex: 1 }}>
+                <ChartAnnotationButton annotationKey="aovOverTime" />
+              </div>
             <Spin spinning={aovLoad}>
               {aovTime.length > 0 ? (
                 <div className="plotly-chart-wrapper">
@@ -500,12 +591,17 @@ export default function Charts() {
               ) : (
                 <div className="charts-empty">No data</div>
               )}
-            </Spin>
+              </Spin>
+            </div>
           </Card>
         </Col>
       </Row>
 
       <Card title="Revenue Comparison by Month" className="chart-container">
+        <div style={{ position: 'relative' }}>
+          <div style={{ position: 'absolute', top: 0, right: 0, zIndex: 1 }}>
+            <ChartAnnotationButton annotationKey="revenueComparison" />
+          </div>
         <Space wrap style={{ marginBottom: 16 }}>
           <Select value={m1y} onChange={setM1y} style={{ width: 100 }} options={compYearOpts.map((y) => ({ value: y, label: String(y) }))} />
           <Select value={m1m} onChange={setM1m} style={{ width: 130 }} options={monthNames.map((m, i) => ({ value: i + 1, label: m }))} />
@@ -551,6 +647,7 @@ export default function Charts() {
             <div className="charts-empty">No data</div>
           )}
         </Spin>
+        </div>
       </Card>
     </div>
   );

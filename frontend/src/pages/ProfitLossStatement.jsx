@@ -2,6 +2,8 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { Card, Table, Select, DatePicker, Spin, message } from 'antd';
 import { DownOutlined, RightOutlined } from '@ant-design/icons';
 import { fetchProfitLossSummaryTable } from '../api/profitLoss';
+import TableColumnTitle from '../components/TableColumnTitle';
+import { PROFIT_LOSS_COLUMN_ANNOTATIONS } from '../constants/tableColumnAnnotations';
 import '../styles/profitLoss.css';
 
 const viewModes = [
@@ -119,7 +121,7 @@ export default function ProfitLossStatement() {
     const keys = Object.keys(data[0]);
     return [
       {
-        title: 'Line Item',
+        title: <TableColumnTitle title="Line Item" annotation={PROFIT_LOSS_COLUMN_ANNOTATIONS['Line Item']} />,
         dataIndex: 'Line Item',
         key: 'Line Item',
         width: 400,
@@ -181,14 +183,17 @@ export default function ProfitLossStatement() {
       },
       ...keys
         .filter((k) => k !== 'Line Item')
-        .map((k) => ({
-          title: k,
-          dataIndex: k,
-          key: k,
-          align: 'right',
-          width: 120,
-          render: (v) => fmt(v),
-        })),
+        .map((k) => {
+          const annotation = PROFIT_LOSS_COLUMN_ANNOTATIONS[k] ?? PROFIT_LOSS_COLUMN_ANNOTATIONS['__PERIOD__'];
+          return {
+            title: <TableColumnTitle title={k} annotation={annotation} />,
+            dataIndex: k,
+            key: k,
+            align: 'right',
+            width: 120,
+            render: (v) => fmt(v),
+          };
+        }),
     ];
   }, [data, expanded]);
 
