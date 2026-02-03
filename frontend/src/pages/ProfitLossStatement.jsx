@@ -10,6 +10,34 @@ const viewModes = [
   { value: 'month_year', label: 'Month/Year' },
 ];
 
+// Tất cả các expense items có thể chọn để tính profit
+const ALL_EXPENSE_OPTIONS = [
+  { value: 'refund_cost', label: 'Refund Cost' },
+  { value: 'cost_of_goods', label: 'Cost of Goods' },
+  { value: 'total_etsy_fees', label: 'Etsy Fees' },
+  { value: 'general_production_cost', label: 'Chi phí sản xuất chung' },
+  { value: 'staff_cost', label: 'Chi phí nhân viên (Chi phí bán hàng)' },
+  { value: 'material_packaging_cost', label: 'Chi phí nguyên vật liệu, bao bì (Chi phí bán hàng)' },
+  { value: 'platform_tool_cost', label: 'Chi phí dụng cụ tool sàn (Chi phí bán hàng)' },
+  { value: 'tool_cost', label: 'Chi phí dụng cụ tool (Chi phí bán hàng)' },
+  { value: 'management_staff_cost', label: 'Chi phí nhân viên quản lý (Chi phí quản lý doanh nghiệp)' },
+  { value: 'marketing_staff_cost', label: 'Chi phí nhân viên marketing - đăng và quản lí kênh (Chi phí quản lý doanh nghiệp)' },
+];
+
+// Default selected items
+const DEFAULT_EXPENSE_ITEMS = [
+  'refund_cost',
+  'cost_of_goods',
+  'total_etsy_fees',
+  'general_production_cost',
+  'staff_cost',
+  'material_packaging_cost',
+  'platform_tool_cost',
+  'tool_cost',
+  'management_staff_cost',
+  'marketing_staff_cost',
+];
+
 const ETSY_CHILDREN = [
   '  - Transaction Fee',
   '  - Processing Fee',
@@ -56,6 +84,7 @@ export default function ProfitLossStatement() {
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(false);
   const [expanded, setExpanded] = useState({ etsy: false, vat: false, cogs: false });
+  const [selectedExpenseItems, setSelectedExpenseItems] = useState(DEFAULT_EXPENSE_ITEMS);
 
   const toggle = (key) => setExpanded((s) => ({ ...s, [key]: !s[key] }));
 
@@ -64,8 +93,10 @@ export default function ProfitLossStatement() {
       start_date: startDate?.format?.('YYYY-MM-DD') || null,
       end_date: endDate?.format?.('YYYY-MM-DD') || null,
       view_mode: viewMode,
+      selected_items: selectedExpenseItems.length > 0 ? selectedExpenseItems.join(',') : null,
+      use_default_formula: false, // Sử dụng selected_items từ UI
     }),
-    [startDate, endDate, viewMode]
+    [startDate, endDate, viewMode, selectedExpenseItems]
   );
 
   useEffect(() => {
@@ -74,8 +105,9 @@ export default function ProfitLossStatement() {
       .then((r) => setData(r?.data || []))
       .catch(() => message.error('Failed to load Profit & Loss table'))
       .finally(() => setLoading(false));
-  }, [filters.start_date, filters.end_date, filters.view_mode]);
+  }, [filters.start_date, filters.end_date, filters.view_mode, filters.selected_items]);
 
+  // Profit đã được tính từ backend dựa trên selected_items
   const rows = useMemo(() => {
     return data
       .filter((r) => !isChildHidden(r['Line Item'], expanded))
@@ -183,6 +215,24 @@ export default function ProfitLossStatement() {
             style={{ width: 140 }}
           />
         </div>
+        
+        <div style={{ marginTop: 16 }}>
+          <div style={{ marginBottom: 8 }}>
+            <strong>Chọn các chi phí để tính Profit:</strong>
+          </div>
+          <Select
+            mode="multiple"
+            allowClear
+            placeholder="Chọn các chi phí trừ khỏi Revenue"
+            value={selectedExpenseItems}
+            onChange={setSelectedExpenseItems}
+            options={ALL_EXPENSE_OPTIONS}
+            style={{ width: '100%' }}
+            maxTagCount="responsive"
+            optionFilterProp="label"
+          />
+        </div>
+        
       </Card>
 
       <Card title="Profit & Loss Summary Table" size="small">

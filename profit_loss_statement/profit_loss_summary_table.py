@@ -1,8 +1,9 @@
 import pandas as pd
 from utils.db_query import execute_query
+from profit_loss_statement.profit_formula_config import get_default_profit_expense_items
 
 
-def get_profit_loss_summary_table(start_date: str = None, end_date: str = None, view_mode: str = 'month', selected_items: list = None):
+def get_profit_loss_summary_table(start_date: str = None, end_date: str = None, view_mode: str = 'month', selected_items: list = None, use_default_formula: bool = True):
     """
     Get Profit and Loss Summary Table data with monthly or yearly breakdown.
     
@@ -11,8 +12,10 @@ def get_profit_loss_summary_table(start_date: str = None, end_date: str = None, 
         end_date: End date filter (YYYY-MM-DD)
         view_mode: 'month' | 'year' | 'month_year'
         selected_items: List of column names to subtract from Revenue for Net Profit calculation.
-                       If None, Net Profit = 0 (user must select items in UI).
+                       If None và use_default_formula=True, sử dụng công thức mặc định từ config.
                        Example: ['refund_cost', 'cost_of_goods', 'total_etsy_fees', ...]
+        use_default_formula: Nếu True và selected_items=None, sử dụng công thức mặc định.
+                            Nếu False và selected_items=None, Net Profit = 0.
     """
 
     # Base date filter for all queries
@@ -308,10 +311,16 @@ def get_profit_loss_summary_table(start_date: str = None, end_date: str = None, 
 
     # Calculate Net Profit = Revenue - (tổng các cột được chọn)
     # Nếu selected_items được cung cấp, tính Net Profit linh hoạt dựa trên các item được chọn
-    if selected_items and len(selected_items) > 0:
+    # Nếu không có selected_items và use_default_formula=True, sử dụng công thức mặc định
+    
+    expense_items_to_use = selected_items
+    if expense_items_to_use is None and use_default_formula:
+        expense_items_to_use = get_default_profit_expense_items()
+    
+    if expense_items_to_use and len(expense_items_to_use) > 0:
         # Tính Net Profit = Revenue - sum(các cột được chọn)
         net_profit = monthly_data['revenue'].copy()
-        for item in selected_items:
+        for item in expense_items_to_use:
             if item in monthly_data.columns:
                 net_profit = net_profit - monthly_data[item]
             else:
@@ -320,7 +329,7 @@ def get_profit_loss_summary_table(start_date: str = None, end_date: str = None, 
                 logging.warning(f"Column '{item}' not found in monthly_data. Available columns: {list(monthly_data.columns)}")
         monthly_data['net_profit'] = net_profit
     else:
-        # Nếu không có selected_items, để Net Profit = 0 (user phải chọn items trong UI)
+        # Nếu không có expense items, để Net Profit = 0
         monthly_data['net_profit'] = 0
 
     # Format key for display

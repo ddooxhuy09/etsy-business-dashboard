@@ -9,3 +9,7 @@ function params(p) {
 export function fetchProfitLossSummaryTable(filters) {
   return api.get('/api/profit-loss/summary-table', { params: params(filters) }).then((r) => r.data);
 }
+
+export function fetchProfitFormulaConfig() {
+  return api.get('/api/profit-loss/formula-config').then((r) => r.data);
+}
