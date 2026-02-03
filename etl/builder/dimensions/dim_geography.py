@@ -21,6 +21,11 @@ class GeographyDimensionBuilder(BaseBuilder):
         """Build geography dimension from shipping addresses"""
         logger.info("Building geography dimension...")
 
+        # Handle None input
+        if orders_df is None or orders_df.empty:
+            logger.warning("orders_df is None or empty, returning empty geography dimension")
+            return pd.DataFrame(columns=['geography_key', 'location_hash', 'country_name', 'continent'])
+
         # Map column names for geography (handle case sensitivity)
         geo_column_mapping = {}
         for col in orders_df.columns:

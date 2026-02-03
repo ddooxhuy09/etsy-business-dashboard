@@ -16,8 +16,13 @@ class OrderDimensionBuilder(BaseBuilder):
     def __init__(self, output_path: str = "data/warehouse"):
         super().__init__(output_path)
 
-    def build_order_dimension(self, orders_df: pd.DataFrame, direct_checkout_df: pd.DataFrame) -> pd.DataFrame:
+    def build_order_dimension(self, orders_df: pd.DataFrame, direct_checkout_df: pd.DataFrame = None) -> pd.DataFrame:
         """Build Order Dimension theo chuẩn Etsy MDM"""
+        # Handle None orders_df
+        if orders_df is None or orders_df.empty:
+            logger.warning("orders_df is None or empty, returning empty order dimension")
+            return pd.DataFrame(columns=['order_key', 'order_id'])
+        
         orders = orders_df.copy()
         
         # Handle direct_checkout_df if it's None or empty

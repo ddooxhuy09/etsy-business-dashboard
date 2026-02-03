@@ -48,8 +48,6 @@ def parse_description(description: str) -> dict:
         "6421", "6428",
     }
 
-    # Pattern: any word chars (letters+digits) _ any word chars _ any word chars, optional 4-digit account
-    # Hỗ trợ cả format cũ (DEF_MG01107417_03 6221) lẫn format đơn giản (1_1_1)
     pattern = r'([A-Z0-9]+)_([A-Z0-9]+)_([A-Z0-9]+)(?:\s+(\d{4}))?'
     match = re.search(pattern, description, flags=re.IGNORECASE)
     

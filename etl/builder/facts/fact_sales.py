@@ -20,6 +20,11 @@ class SalesFactBuilder(BaseBuilder):
 
     def build_sales_fact(self, sold_order_items_df: pd.DataFrame, datasets: Dict[str, pd.DataFrame]) -> pd.DataFrame:
         """Build Sales Fact Table"""
+        # Handle None input
+        if sold_order_items_df is None or sold_order_items_df.empty:
+            logger.warning("sold_order_items_df is None or empty, returning empty fact_sales")
+            return pd.DataFrame(columns=['sales_key', 'order_id', 'transaction_id', 'quantity_sold'])
+        
         fact_sales = sold_order_items_df.copy()
 
         # Generate keys

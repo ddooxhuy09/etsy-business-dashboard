@@ -22,11 +22,29 @@ class ProductDimensionBuilder(BaseBuilder):
         """Build product master dimension with SCD Type 2"""
         logger.info("Building product dimension...")
 
+        # Handle None inputs - not all months have all files
+        has_listing = listing_df is not None and not listing_df.empty
+        has_order_items = order_items_df is not None and not order_items_df.empty
+        
+        if not has_listing and not has_order_items:
+            logger.warning("No listing or order_items data provided, returning empty product dimension")
+            return pd.DataFrame(columns=['product_key', 'listing_id', 'title', 'description', 'price', 
+                                        'currency_code', 'quantity', 'is_current', 'effective_date', 
+                                        'expiry_date', 'created_date', 'updated_date'])
+
+        # Initialize empty DataFrames if None
+        if not has_listing:
+            logger.info("No listing data, building product dimension from order_items only")
+            listing_df = pd.DataFrame()
+        if not has_order_items:
+            logger.info("No order_items data, building product dimension from listing only")
+            order_items_df = pd.DataFrame()
+
         # STEP 1: Map column names for listing_df
         listing_needed_cols = []
         listing_col_mapping = {}
 
-        for col in listing_df.columns:
+        for col in listing_df.columns if has_listing else []:
             if col == 'title':
                 listing_needed_cols.append(col)
                 listing_col_mapping[col] = 'title'
@@ -60,7 +78,7 @@ class ProductDimensionBuilder(BaseBuilder):
         items_needed_cols = []
         items_col_mapping = {}
 
-        for col in order_items_df.columns:
+        for col in order_items_df.columns if has_order_items else []:
             if col == 'listing_id':
                 items_needed_cols.append(col)
                 items_col_mapping[col] = 'listing_id'
@@ -70,6 +88,9 @@ class ProductDimensionBuilder(BaseBuilder):
             elif col == 'price':
                 items_needed_cols.append(col)
                 items_col_mapping[col] = 'item_price'
+            elif col == 'quantity':
+                items_needed_cols.append(col)
+                items_col_mapping[col] = 'quantity'  # Map quantity from order_items
             elif col == 'sku':
                 items_needed_cols.append(col)
                 items_col_mapping[col] = 'item_sku'
@@ -81,7 +102,7 @@ class ProductDimensionBuilder(BaseBuilder):
         # STEP 3: Deduplicate order items and full join by title vs item_name
 
         # Deduplicate order items by listing_id (keep first)
-        if 'listing_id' in order_items_df.columns:
+        if has_order_items and 'listing_id' in order_items_df.columns:
             before_dupe = len(order_items_df)
             order_items_df = order_items_df.sort_index().drop_duplicates(subset=['listing_id'], keep='first')
             logger.info(f"Deduplicated order_items by listing_id: {before_dupe} -> {len(order_items_df)}")
@@ -93,21 +114,28 @@ class ProductDimensionBuilder(BaseBuilder):
             except Exception:
                 return None
 
-        if 'title' in listing_df.columns:
-            listing_df['__join_key__'] = listing_df['title'].apply(_norm)
-        elif 'title' in order_items_df.columns:
-            listing_df['__join_key__'] = order_items_df['item_name'].apply(_norm)
-        else:
-            listing_df['__join_key__'] = None
+        # Handle different scenarios based on available data
+        if has_listing and has_order_items:
+            # Both available - do full outer join
+            if 'title' in listing_df.columns:
+                listing_df['__join_key__'] = listing_df['title'].apply(_norm)
+            else:
+                listing_df['__join_key__'] = None
 
-        if 'item_name' in order_items_df.columns:
-            order_items_df['__join_key__'] = order_items_df['item_name'].apply(_norm)
-        else:
-            order_items_df['__join_key__'] = None
+            if 'item_name' in order_items_df.columns:
+                order_items_df['__join_key__'] = order_items_df['item_name'].apply(_norm)
+            else:
+                order_items_df['__join_key__'] = None
 
-        # Full outer join by normalized title/item_name
-        products = pd.merge(listing_df, order_items_df, on='__join_key__', how='outer', suffixes=('_listing', '_items'))
-        products = products.drop(columns=['__join_key__'], errors='ignore')
+            # Full outer join by normalized title/item_name
+            products = pd.merge(listing_df, order_items_df, on='__join_key__', how='outer', suffixes=('_listing', '_items'))
+            products = products.drop(columns=['__join_key__'], errors='ignore')
+        elif has_listing:
+            # Only listing available
+            products = listing_df.copy()
+        else:
+            # Only order_items available
+            products = order_items_df.copy()
 
         # STEP 4: Process product data (common logic)
         products = self._process_product_data(products, logger)
@@ -221,7 +249,11 @@ class ProductDimensionBuilder(BaseBuilder):
         
         # Set default values
         products['currency_code'] = products.get('currency_code', 'USD')
-        products['quantity'] = products.get('quantity', None)
+        # Ensure quantity is numeric to match INTEGER column in PostgreSQL
+        if 'quantity' in products.columns:
+            products['quantity'] = pd.to_numeric(products['quantity'], errors='coerce')
+        else:
+            products['quantity'] = None
         products['color'] = products.get('color', None)
         products['material'] = products.get('material', None)
         products['dimensions'] = products.get('dimensions', None)

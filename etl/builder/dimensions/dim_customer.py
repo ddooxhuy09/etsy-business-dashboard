@@ -22,15 +22,23 @@ class CustomerDimensionBuilder(BaseBuilder):
         """Build customer master dimension with analytics"""
         logger.info("Building customer dimension...")
         
+        # Handle None inputs
+        if orders_df is None or orders_df.empty:
+            logger.warning("orders_df is None or empty, cannot build customer dimension")
+            return pd.DataFrame(columns=['customer_key', 'buyer_user_name', 'full_name', 'is_current'])
+        if direct_checkout_df is None or direct_checkout_df.empty:
+            logger.warning("direct_checkout_df is None or empty, proceeding with orders only")
+            direct_checkout_df = pd.DataFrame()
+        
         # Debug: Log initial column names
         logger.info(f"Initial orders_df columns: {list(orders_df.columns)}")
-        logger.info(f"Initial direct_checkout_df columns: {list(direct_checkout_df.columns)}")
+        logger.info(f"Initial direct_checkout_df columns: {list(direct_checkout_df.columns) if not direct_checkout_df.empty else 'empty'}")
 
         # STEP 1: Map column names for direct_checkout_df FIRST
         checkout_needed_cols = []
         checkout_col_mapping = {}
         
-        for col in direct_checkout_df.columns:
+        for col in direct_checkout_df.columns if not direct_checkout_df.empty else []:
             if col == 'buyer_username':
                 checkout_needed_cols.append(col)
                 checkout_col_mapping[col] = 'buyer_user_name'
