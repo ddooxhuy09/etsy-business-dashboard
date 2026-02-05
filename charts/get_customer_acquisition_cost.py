@@ -36,10 +36,10 @@ def get_customer_acquisition_cost(start_date: str = None, end_date: str = None):
     , 2) AS "CAC (USD)"
     """
     
-    if start_date and end_date:
-        params = [start_date, end_date, start_date, end_date]
-    else:
-        params = ['2025-01-01', '2025-12-31', '2025-01-01', '2025-12-31']
+    # Use provided dates or wide default (all data) when null
+    s = start_date or '2000-01-01'
+    e = end_date or '2099-12-31'
+    params = [s, e, s, e]
     
     return execute_chart_query(sql, tuple(params))
 

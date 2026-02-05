@@ -3,33 +3,35 @@ Customer Lifetime Value Chart - REFACTORED
 Uses shared utilities to eliminate code duplication
 """
 from charts._streamlit_shim import st  # noqa: F401
-from utils.chart_helpers import (
-    execute_chart_query,
-    render_chart_description
-)
+from utils.chart_helpers import execute_chart_query, render_chart_description
+from utils.query_builder import build_customer_filter
 
 
 def get_customer_lifetime_value(start_date: str = None, end_date: str = None, customer_type: str = 'all', customer_lifespan_months: int = 12):
     """Get customer lifetime value"""
+    s = start_date or '2000-01-01'
+    e = end_date or '2099-12-31'
+    cust_sql, _ = build_customer_filter(customer_type, 'fs')
+    date_cond = " AND dt.full_date >= %s AND dt.full_date <= %s"
     sql = """
     SELECT ROUND(
         (
             -- Average Revenue per Customer
-            (SELECT SUM(COALESCE(fs.item_total, 0)) 
-             FROM fact_sales fs 
+            (SELECT SUM(COALESCE(fs.item_total, 0))
+             FROM fact_sales fs
              JOIN dim_time dt ON fs.sale_date_key = dt.time_key
-             WHERE 1=1 AND dt.full_date >= %s AND dt.full_date <= %s) * 1.0 / 
-            NULLIF((SELECT COUNT(DISTINCT fs.customer_key) 
-                    FROM fact_sales fs 
+             WHERE 1=1""" + date_cond + cust_sql + """) * 1.0 /
+            NULLIF((SELECT COUNT(DISTINCT fs.customer_key)
+                    FROM fact_sales fs
                     JOIN dim_time dt ON fs.sale_date_key = dt.time_key
-                    WHERE 1=1 AND dt.full_date >= %s AND dt.full_date <= %s), 0)
+                    WHERE 1=1""" + date_cond + cust_sql + """), 0)
             *
             -- Customer Lifespan
             %s
             -
             -- Total Costs of Serving the Customer
             (
-                SELECT 
+                SELECT
                     SUM(COALESCE(fp.fees, 0)) +
                     SUM(COALESCE(fp.posted_fees, 0)) +
                     SUM(COALESCE(fp.adjusted_fees, 0)) +
@@ -41,20 +43,16 @@ def get_customer_lifetime_value(start_date: str = None, end_date: str = None, cu
                 JOIN fact_payments fp ON fs.order_key = fp.order_key
                 JOIN dim_order ON fs.order_key = dim_order.order_key
                 JOIN dim_time dt ON fs.sale_date_key = dt.time_key
-                WHERE 1=1 AND dt.full_date >= %s AND dt.full_date <= %s
-            ) * 1.0 / 
-            NULLIF((SELECT COUNT(DISTINCT fs.customer_key) 
-                    FROM fact_sales fs 
+                WHERE 1=1""" + date_cond + cust_sql + """
+            ) * 1.0 /
+            NULLIF((SELECT COUNT(DISTINCT fs.customer_key)
+                    FROM fact_sales fs
                     JOIN dim_time dt ON fs.sale_date_key = dt.time_key
-                    WHERE 1=1 AND dt.full_date >= %s AND dt.full_date <= %s), 0)
+                    WHERE 1=1""" + date_cond + cust_sql + """), 0)
         )
     , 2) AS "CLV (USD)"
     """
-    
-    if start_date and end_date:
-        params = [start_date, end_date, start_date, end_date, customer_lifespan_months, start_date, end_date, start_date, end_date]
-    else:
-        params = ['2025-01-01', '2025-12-31', '2025-01-01', '2025-12-31', customer_lifespan_months, '2025-01-01', '2025-12-31', '2025-01-01', '2025-12-31']
+    params = [s, e, s, e, customer_lifespan_months, s, e, s, e]
     
     return execute_chart_query(sql, tuple(params))
 

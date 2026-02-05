@@ -6,15 +6,17 @@ from utils.chart_helpers import get_customer_type_display
 
 
 def get_new_customers_over_time(start_date: str = None, end_date: str = None, customer_type: str = 'all'):
-    """Get new customers over time"""
-    sql = """SELECT dtime.full_date as "Date", COUNT(DISTINCT fs.customer_key) as "New Customers" 
-           FROM fact_sales fs 
-           JOIN dim_time dtime ON fs.sale_date_key = dtime.time_key 
+    """Get new/returning customers over time based on customer_type filter"""
+    # new/all = count new customers (1 order); return = count returning customers (>1 order)
+    having_clause = "HAVING COUNT(DISTINCT order_key) > 1" if customer_type == 'return' else "HAVING COUNT(DISTINCT order_key) = 1"
+    sql = f"""SELECT dtime.full_date as "Date", COUNT(DISTINCT fs.customer_key) as "New Customers"
+           FROM fact_sales fs
+           JOIN dim_time dtime ON fs.sale_date_key = dtime.time_key
            WHERE fs.customer_key IN (
                SELECT customer_key
                FROM fact_sales
                GROUP BY customer_key
-               HAVING COUNT(DISTINCT order_key) = 1
+               {having_clause}
            )"""
     
     params = []
@@ -24,15 +26,6 @@ def get_new_customers_over_time(start_date: str = None, end_date: str = None, cu
     if end_date:
         sql += " AND dtime.full_date <= %s"
         params.append(end_date)
-    
-    if customer_type == 'new':
-        sql += """ AND fs.customer_key IN (
-            SELECT customer_key FROM fact_sales GROUP BY customer_key HAVING COUNT(DISTINCT order_key) = 1
-        )"""
-    elif customer_type == 'return':
-        sql += """ AND fs.customer_key IN (
-            SELECT customer_key FROM fact_sales GROUP BY customer_key HAVING COUNT(DISTINCT order_key) > 1
-        )"""
     
     sql += """ GROUP BY 1 
                ORDER BY 1"""
