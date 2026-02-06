@@ -21,10 +21,10 @@ def get_new_customers_over_time(start_date: str = None, end_date: str = None, cu
     
     params = []
     if start_date:
-        sql += " AND dtime.full_date >= %s"
+        sql += " AND dtime.full_date >= %s::date"
         params.append(start_date)
     if end_date:
-        sql += " AND dtime.full_date <= %s"
+        sql += " AND dtime.full_date <= %s::date"
         params.append(end_date)
     
     sql += """ GROUP BY 1 

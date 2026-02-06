@@ -23,7 +23,6 @@ def get_total_orders_by_month(start_date: str = None, end_date: str = None, cust
     
     filter_sql, params = build_standard_filters(start_date, end_date, customer_type, 'fs', 'dt.full_date')
     sql += filter_sql
-    
     sql += """
     GROUP BY dt.year, dt.month 
     ORDER BY dt.year, dt.month

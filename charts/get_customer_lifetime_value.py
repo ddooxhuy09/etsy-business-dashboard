@@ -12,7 +12,7 @@ def get_customer_lifetime_value(start_date: str = None, end_date: str = None, cu
     s = start_date or '2000-01-01'
     e = end_date or '2099-12-31'
     cust_sql, _ = build_customer_filter(customer_type, 'fs')
-    date_cond = " AND dt.full_date >= %s AND dt.full_date <= %s"
+    date_cond = " AND dt.full_date >= %s::date AND dt.full_date <= %s::date"
     sql = """
     SELECT ROUND(
         (

@@ -25,8 +25,6 @@ class AuthMiddleware(BaseHTTPMiddleware):
         # Extract token from Authorization header
         auth_header = request.headers.get("Authorization")
         if not auth_header or not auth_header.startswith("Bearer "):
-            print(f"[AuthMiddleware] Missing Authorization header for: {request.url.path}")
-            print(f"[AuthMiddleware] All headers: {dict(request.headers)}")
             return Response(
                 content='{"detail":"Missing or invalid Authorization header"}',
                 status_code=status.HTTP_401_UNAUTHORIZED,
@@ -35,13 +33,9 @@ class AuthMiddleware(BaseHTTPMiddleware):
             )
         
         token = auth_header.replace("Bearer ", "").strip()
-        print(f"[AuthMiddleware] Verifying token for: {request.url.path}")
-        print(f"[AuthMiddleware] Token length: {len(token)}, Token preview: {token[:20]}...")
-        
         payload = verify_supabase_jwt(token)
         
         if payload is None:
-            print(f"[AuthMiddleware] Token verification failed for: {request.url.path}")
             return Response(
                 content='{"detail":"Invalid or expired token"}',
                 status_code=status.HTTP_401_UNAUTHORIZED,
@@ -49,8 +43,6 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 headers={"WWW-Authenticate": "Bearer"},
             )
         
-        print(f"[AuthMiddleware] Token verified successfully for: {request.url.path}, user_id: {payload.get('sub')}")
-        # Attach user info to request state for use in route handlers
         request.state.user = payload
         
         return await call_next(request)

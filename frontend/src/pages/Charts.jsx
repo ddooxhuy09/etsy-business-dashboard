@@ -23,22 +23,34 @@ function ChartAnnotationButton({ annotationKey }) {
 
 function toYMD(d) {
   if (!d) return null;
-  const v = typeof d?.format === 'function' ? d.format('YYYY-MM-DD') : d;
-  return v || null;
+  const v = typeof d?.format === 'function' ? d.format('YYYY-MM-DD') : (typeof d === 'string' ? d : null);
+  if (!v || v === 'Invalid Date' || !/^\d{4}-\d{2}-\d{2}$/.test(v)) return null;
+  return v;
 }
 
 function buildResolved(year, month, fromDate, toDate) {
-  if (fromDate || toDate) {
-    return { start_date: toYMD(fromDate), end_date: toYMD(toDate) };
+  const sd = toYMD(fromDate);
+  const ed = toYMD(toDate);
+  if (sd || ed) {
+    let start = sd;
+    let end = ed;
+    if (start && end && start > end) {
+      [start, end] = [end, start];
+    }
+    return { start_date: start || null, end_date: end || null };
   }
   if (year && year !== 'all') {
     const y = Number(year);
     if (month && month !== 'all') {
       const m = Number(month);
       const last = new Date(y, m, 0);
+      const lastDay = last.getDate();
+      if (lastDay <= 1) {
+        return { start_date: null, end_date: null };
+      }
       return {
         start_date: `${y}-${String(m).padStart(2, '0')}-01`,
-        end_date: `${y}-${String(m).padStart(2, '0')}-${String(last.getDate()).padStart(2, '0')}`,
+        end_date: `${y}-${String(m).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`,
       };
     }
     return { start_date: `${y}-01-01`, end_date: `${y}-12-31` };
@@ -60,15 +72,15 @@ export default function Charts() {
   const [m2y, setM2y] = useState(new Date().getFullYear() - 1);
   const [m2m, setM2m] = useState(new Date().getMonth() + 1);
 
-  const resolved = useMemo(
-    () => ({ ...buildResolved(year, month, fromDate, toDate), customer_type: customerType, customer_lifespan_months: lifespan }),
-    [year, month, fromDate, toDate, customerType, lifespan]
-  );
+  const resolved = useMemo(() => {
+    return { ...buildResolved(year, month, fromDate, toDate), customer_type: customerType, customer_lifespan_months: lifespan };
+  }, [year, month, fromDate, toDate, customerType, lifespan]);
 
   // KPIs
   const [kpi, setKpi] = useState({ revenue: null, orders: null, customers: null, aov: null });
   const [kpiLoad, setKpiLoad] = useState(false);
   useEffect(() => {
+    let active = true;
     setKpiLoad(true);
     Promise.all([
       ChartsApi.chartsTotalRevenue(resolved),
@@ -77,6 +89,7 @@ export default function Charts() {
       ChartsApi.chartsAov(resolved),
     ])
       .then(([r, o, c, a]) => {
+        if (!active) return;
         setKpi({
           revenue: r?.data?.[0]?.['Total Revenue (USD)'],
           orders: o?.data?.[0]?.['Total Orders'],
@@ -85,141 +98,174 @@ export default function Charts() {
         });
       })
       .catch(() => {
+        if (!active) return;
         setKpi({ revenue: null, orders: null, customers: null, aov: null });
       })
-      .finally(() => setKpiLoad(false));
+      .finally(() => { if (active) setKpiLoad(false); });
+    return () => { active = false; };
   }, [resolved.start_date, resolved.end_date, resolved.customer_type]);
 
   // Revenue by month
   const [revMonth, setRevMonth] = useState([]);
   const [revLoad, setRevLoad] = useState(false);
   useEffect(() => {
+    let active = true;
     setRevLoad(true);
     ChartsApi.chartsRevenueByMonth(resolved)
-      .then((r) => setRevMonth(r?.data || []))
-      .catch(() => setRevMonth([]))
-      .finally(() => setRevLoad(false));
+      .then((r) => { if (active) setRevMonth(r?.data || []); })
+      .catch(() => { if (active) setRevMonth([]); })
+      .finally(() => { if (active) setRevLoad(false); });
+    return () => { active = false; };
   }, [resolved.start_date, resolved.end_date, resolved.customer_type]);
 
   // Profit by month
   const [profitMonth, setProfitMonth] = useState([]);
   const [profitLoad, setProfitLoad] = useState(false);
   useEffect(() => {
+    let active = true;
     setProfitLoad(true);
     ChartsApi.chartsProfitByMonth(resolved)
-      .then((r) => setProfitMonth(r?.data || []))
-      .catch(() => setProfitMonth([]))
-      .finally(() => setProfitLoad(false));
+      .then((r) => { if (active) setProfitMonth(r?.data || []); })
+      .catch(() => { if (active) setProfitMonth([]); })
+      .finally(() => { if (active) setProfitLoad(false); });
+    return () => { active = false; };
   }, [resolved.start_date, resolved.end_date, resolved.customer_type]);
 
   // New vs Returning
   const [newReturn, setNewReturn] = useState([]);
   const [nrLoad, setNrLoad] = useState(false);
   useEffect(() => {
+    let active = true;
     setNrLoad(true);
     ChartsApi.chartsNewVsReturning(resolved)
-      .then((r) => setNewReturn(r?.data || []))
-      .catch(() => setNewReturn([]))
-      .finally(() => setNrLoad(false));
+      .then((r) => { if (active) setNewReturn(r?.data || []); })
+      .catch(() => { if (active) setNewReturn([]); })
+      .finally(() => { if (active) setNrLoad(false); });
+    return () => { active = false; };
   }, [resolved.start_date, resolved.end_date, resolved.customer_type]);
 
   // New customers over time
   const [newCust, setNewCust] = useState([]);
   const [ncLoad, setNcLoad] = useState(false);
   useEffect(() => {
+    let active = true;
     setNcLoad(true);
     ChartsApi.chartsNewCustomersOverTime(resolved)
-      .then((r) => setNewCust(r?.data || []))
-      .catch(() => setNewCust([]))
-      .finally(() => setNcLoad(false));
+      .then((r) => { if (active) setNewCust(r?.data || []); })
+      .catch(() => { if (active) setNewCust([]); })
+      .finally(() => { if (active) setNcLoad(false); });
+    return () => { active = false; };
   }, [resolved.start_date, resolved.end_date, resolved.customer_type]);
 
   // Customers by location
   const [byLoc, setByLoc] = useState([]);
   const [locLoad, setLocLoad] = useState(false);
   useEffect(() => {
+    let active = true;
     setLocLoad(true);
     ChartsApi.chartsCustomersByLocation(resolved)
-      .then((r) => setByLoc(r?.data || []))
-      .catch(() => setByLoc([]))
-      .finally(() => setLocLoad(false));
+      .then((r) => { if (active) setByLoc(r?.data || []); })
+      .catch(() => { if (active) setByLoc([]); })
+      .finally(() => { if (active) setLocLoad(false); });
+    return () => { active = false; };
   }, [resolved.start_date, resolved.end_date, resolved.customer_type]);
 
   // Retention
   const [ret, setRet] = useState(null);
   const [retLoad, setRetLoad] = useState(false);
   useEffect(() => {
+    let active = true;
     setRetLoad(true);
     ChartsApi.chartsRetention(resolved)
-      .then((r) => setRet(r?.data?.[0]?.['Retention Rate (%)']))
-      .catch(() => setRet(null))
-      .finally(() => setRetLoad(false));
+      .then((r) => { if (active) setRet(r?.data?.[0]?.['Retention Rate (%)']); })
+      .catch(() => { if (active) setRet(null); })
+      .finally(() => { if (active) setRetLoad(false); });
+    return () => { active = false; };
   }, [resolved.start_date, resolved.end_date, resolved.customer_type]);
 
   // Sales by product
   const [byProd, setByProd] = useState([]);
   const [prodLoad, setProdLoad] = useState(false);
   useEffect(() => {
+    let active = true;
     setProdLoad(true);
     ChartsApi.chartsSalesByProduct(resolved)
-      .then((r) => setByProd(r?.data || []))
-      .catch(() => setByProd([]))
-      .finally(() => setProdLoad(false));
+      .then((r) => { if (active) setByProd(r?.data || []); })
+      .catch(() => { if (active) setByProd([]); })
+      .finally(() => { if (active) setProdLoad(false); });
+    return () => { active = false; };
   }, [resolved.start_date, resolved.end_date, resolved.customer_type]);
 
   // CAC
   const [cac, setCac] = useState(null);
   const [cacLoad, setCacLoad] = useState(false);
   useEffect(() => {
+    let active = true;
     setCacLoad(true);
     ChartsApi.chartsCac(resolved)
-      .then((r) => setCac(r?.data?.[0]?.['CAC (USD)']))
-      .catch(() => setCac(null))
-      .finally(() => setCacLoad(false));
+      .then((r) => { if (active) setCac(r?.data?.[0]?.['CAC (USD)']); })
+      .catch(() => { if (active) setCac(null); })
+      .finally(() => { if (active) setCacLoad(false); });
+    return () => { active = false; };
   }, [resolved.start_date, resolved.end_date]);
 
   // CLV
   const [clv, setClv] = useState(null);
   const [clvLoad, setClvLoad] = useState(false);
   useEffect(() => {
+    let active = true;
     setClvLoad(true);
     ChartsApi.chartsClv(resolved)
-      .then((r) => setClv(r?.data?.[0]?.['CLV (USD)']))
-      .catch(() => setClv(null))
-      .finally(() => setClvLoad(false));
+      .then((r) => { if (active) setClv(r?.data?.[0]?.['CLV (USD)']); })
+      .catch(() => { if (active) setClv(null); })
+      .finally(() => { if (active) setClvLoad(false); });
+    return () => { active = false; };
   }, [resolved.start_date, resolved.end_date, resolved.customer_type, resolved.customer_lifespan_months]);
 
   // CAC/CLV over time
   const [cacClv, setCacClv] = useState([]);
   const [cacClvLoad, setCacClvLoad] = useState(false);
   useEffect(() => {
+    let active = true;
     setCacClvLoad(true);
     ChartsApi.chartsCacClv(resolved)
-      .then((r) => setCacClv(r?.data || []))
-      .catch(() => setCacClv([]))
-      .finally(() => setCacClvLoad(false));
+      .then((r) => { if (active) setCacClv(r?.data || []); })
+      .catch(() => { if (active) setCacClv([]); })
+      .finally(() => { if (active) setCacClvLoad(false); });
+    return () => { active = false; };
   }, [resolved.start_date, resolved.end_date, resolved.customer_lifespan_months]);
 
   // Orders by month
   const [ordMonth, setOrdMonth] = useState([]);
   const [ordLoad, setOrdLoad] = useState(false);
+
   useEffect(() => {
+    let active = true;
     setOrdLoad(true);
     ChartsApi.chartsOrdersByMonth(resolved)
-      .then((r) => setOrdMonth(r?.data || []))
-      .catch(() => setOrdMonth([]))
-      .finally(() => setOrdLoad(false));
+      .then((r) => {
+        if (!active) return;
+        setOrdMonth(r?.data || []);
+      })
+      .catch(() => {
+        if (!active) return;
+        setOrdMonth([]);
+      })
+      .finally(() => { if (active) setOrdLoad(false); });
+    return () => { active = false; };
   }, [resolved.start_date, resolved.end_date, resolved.customer_type]);
 
   // AOV over time
   const [aovTime, setAovTime] = useState([]);
   const [aovLoad, setAovLoad] = useState(false);
   useEffect(() => {
+    let active = true;
     setAovLoad(true);
     ChartsApi.chartsAovOverTime(resolved)
-      .then((r) => setAovTime(r?.data || []))
-      .catch(() => setAovTime([]))
-      .finally(() => setAovLoad(false));
+      .then((r) => { if (active) setAovTime(r?.data || []); })
+      .catch(() => { if (active) setAovTime([]); })
+      .finally(() => { if (active) setAovLoad(false); });
+    return () => { active = false; };
   }, [resolved.start_date, resolved.end_date, resolved.customer_type]);
 
   // Revenue comparison
@@ -241,24 +287,45 @@ export default function Charts() {
     { value: 'return', label: 'Returning Customers' },
   ];
 
+  const handleYearChange = (v) => {
+    setYear(v);
+    setFromDate(null);
+    setToDate(null);
+  };
+  const handleMonthChange = (v) => {
+    setMonth(v);
+    setFromDate(null);
+    setToDate(null);
+  };
+  const handleFromDateChange = (v) => {
+    setFromDate(v);
+    setYear('all');
+    setMonth('all');
+  };
+  const handleToDateChange = (v) => {
+    setToDate(v);
+    setYear('all');
+    setMonth('all');
+  };
+
   return (
     <div className="charts-page">
       <Card className="charts-filters" size="small">
         <Space wrap size="middle" align="center">
           <Select
             value={year}
-            onChange={setYear}
+            onChange={handleYearChange}
             style={{ width: 120 }}
             options={[{ value: 'all', label: 'All years' }, ...yearOpts.filter((y) => y !== 'all').map((y) => ({ value: String(y), label: String(y) }))]}
           />
           <Select
             value={month}
-            onChange={setMonth}
+            onChange={handleMonthChange}
             style={{ width: 140 }}
             options={[{ value: 'all', label: 'All months' }, ...monthNames.map((m, i) => ({ value: String(i + 1), label: m }))]}
           />
-          <DatePicker placeholder="From" value={fromDate} onChange={setFromDate} />
-          <DatePicker placeholder="To" value={toDate} onChange={setToDate} />
+          <DatePicker placeholder="From" value={fromDate} onChange={handleFromDateChange} />
+          <DatePicker placeholder="To" value={toDate} onChange={handleToDateChange} />
           <Select
             value={customerType}
             onChange={setCustomerType}
@@ -271,6 +338,7 @@ export default function Charts() {
           </Space>
         </Space>
       </Card>
+
 
       <Row gutter={[16, 16]} className="charts-kpi" style={{ marginBottom: 16 }}>
         <Col span={12}>

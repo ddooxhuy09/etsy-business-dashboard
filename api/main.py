@@ -4,7 +4,14 @@ Run: uvicorn api.main:app --reload --port 8001
 """
 import os
 import sys
+import logging
 from pathlib import Path
+
+# Configure logging for debugging
+logging.basicConfig(
+    level=logging.DEBUG if os.getenv("DEBUG") else logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+)
 
 # Load .env file if exists
 try:

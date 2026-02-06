@@ -20,8 +20,8 @@ def get_cac_clv_ratio_over_time(start_date: str = None, end_date: str = None, li
     sql = """
     WITH bounds AS (
         SELECT 
-            COALESCE(%s::date, MIN(dt.full_date)) AS start_date,
-            COALESCE(%s::date, MAX(dt.full_date)) AS end_date
+            COALESCE(CAST(%s AS date), MIN(dt.full_date)) AS start_date,
+            COALESCE(CAST(%s AS date), MAX(dt.full_date)) AS end_date
         FROM dim_time dt
     ), months AS (
         SELECT ym.year, ym.month,
@@ -50,13 +50,15 @@ def get_cac_clv_ratio_over_time(start_date: str = None, end_date: str = None, li
     SELECT 
         m.year || '-' || LPAD(m.month::text, 2, '0') AS "Month",
         ROUND(
-          COALESCE((
-            SELECT SUM(COALESCE(fft.fees_and_taxes, 0))
-            FROM fact_financial_transactions fft
-            JOIN dim_time dt1 ON fft.transaction_date_key = dt1.time_key
-            WHERE fft.transaction_type = 'Marketing'
-              AND dt1.full_date BETWEEN m.month_start AND m.month_end
-          ), 0) 
+          ABS(
+            COALESCE((
+              SELECT SUM(COALESCE(fft.fees_and_taxes, 0))
+              FROM fact_financial_transactions fft
+              JOIN dim_time dt1 ON fft.transaction_date_key = dt1.time_key
+              WHERE fft.transaction_type = 'Marketing'
+                AND dt1.full_date BETWEEN m.month_start AND m.month_end
+            ), 0)
+          )
           / NULLIF((
             SELECT COUNT(DISTINCT fs.customer_key)
             FROM fact_sales fs

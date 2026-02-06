@@ -2,10 +2,15 @@
 FastAPI routes for chart data. Uses get_* from dashboard/charts (local, no src).
 Charts use api.db.run_query via utils.db_query.
 """
+import re
+import calendar
+import logging
 import pandas as pd
 from fastapi import APIRouter, Query
 
 from charts.get_total_revenue import get_total_revenue
+
+logger = logging.getLogger(__name__)
 from charts.get_total_orders import get_total_orders
 from charts.get_total_customers import get_total_customers
 from charts.get_average_order_value import get_average_order_value
@@ -29,7 +34,25 @@ from charts.get_revenue_comparison_by_month import (
 
 router = APIRouter(prefix="/api/charts", tags=["charts"])
 
-StrOpt = Query(None, description="YYYY-MM-DD")
+def StrOpt():
+    """Each call returns a NEW Query instance so FastAPI doesn't link params."""
+    return Query(None, description="YYYY-MM-DD")
+
+
+def _sanitize_dates(start_date, end_date):
+    """
+    Fix date parameters.
+    When user selects a month filter (e.g. Jan 2026), the frontend may send
+    start_date=2026-01-01 and end_date=2026-01-01 (both = first-of-month).
+    We expand end_date to the last day of that month so the filter covers the whole month.
+    """
+    if start_date and end_date and start_date == end_date:
+        m = re.match(r'^(\d{4})-(\d{2})-01$', end_date)
+        if m:
+            year, month = int(m.group(1)), int(m.group(2))
+            last_day = calendar.monthrange(year, month)[1]
+            end_date = f"{year}-{month:02d}-{last_day:02d}"
+    return start_date, end_date
 
 
 def _to_records(df):
@@ -43,8 +66,8 @@ def _safe_chart_call(chart_func, *args, **kwargs):
     try:
         df = chart_func(*args, **kwargs)
         return df if df is not None else pd.DataFrame()
-    except Exception:
-        # Không log lỗi, chỉ trả về empty DataFrame để frontend hiển "No data"
+    except Exception as e:
+        logger.exception("Chart %s failed: %s", chart_func.__name__, e)
         return pd.DataFrame()
 
 
@@ -52,25 +75,29 @@ def _safe_chart_call(chart_func, *args, **kwargs):
 # KPIs
 # ---------------------------------------------------------------------------
 @router.get("/total-revenue")
-def charts_total_revenue(start_date: str = StrOpt, end_date: str = StrOpt, customer_type: str = Query("all")):
+def charts_total_revenue(start_date: str = StrOpt(), end_date: str = StrOpt(), customer_type: str = Query("all")):
+    start_date, end_date = _sanitize_dates(start_date, end_date)
     df = _safe_chart_call(get_total_revenue, start_date, end_date, customer_type)
     return {"data": _to_records(df)}
 
 
 @router.get("/total-orders")
-def charts_total_orders(start_date: str = StrOpt, end_date: str = StrOpt, customer_type: str = Query("all")):
+def charts_total_orders(start_date: str = StrOpt(), end_date: str = StrOpt(), customer_type: str = Query("all")):
+    start_date, end_date = _sanitize_dates(start_date, end_date)
     df = _safe_chart_call(get_total_orders, start_date, end_date, customer_type)
     return {"data": _to_records(df)}
 
 
 @router.get("/total-customers")
-def charts_total_customers(start_date: str = StrOpt, end_date: str = StrOpt, customer_type: str = Query("all")):
+def charts_total_customers(start_date: str = StrOpt(), end_date: str = StrOpt(), customer_type: str = Query("all")):
+    start_date, end_date = _sanitize_dates(start_date, end_date)
     df = _safe_chart_call(get_total_customers, start_date, end_date, customer_type)
     return {"data": _to_records(df)}
 
 
 @router.get("/average-order-value")
-def charts_aov(start_date: str = StrOpt, end_date: str = StrOpt, customer_type: str = Query("all")):
+def charts_aov(start_date: str = StrOpt(), end_date: str = StrOpt(), customer_type: str = Query("all")):
+    start_date, end_date = _sanitize_dates(start_date, end_date)
     df = _safe_chart_call(get_average_order_value, start_date, end_date, customer_type)
     return {"data": _to_records(df)}
 
@@ -79,13 +106,15 @@ def charts_aov(start_date: str = StrOpt, end_date: str = StrOpt, customer_type: 
 # Revenue
 # ---------------------------------------------------------------------------
 @router.get("/revenue-by-month")
-def charts_revenue_by_month(start_date: str = StrOpt, end_date: str = StrOpt, customer_type: str = Query("all")):
+def charts_revenue_by_month(start_date: str = StrOpt(), end_date: str = StrOpt(), customer_type: str = Query("all")):
+    start_date, end_date = _sanitize_dates(start_date, end_date)
     df = _safe_chart_call(get_revenue_by_month, start_date, end_date, customer_type)
     return {"data": _to_records(df)}
 
 
 @router.get("/profit-by-month")
-def charts_profit_by_month(start_date: str = StrOpt, end_date: str = StrOpt, customer_type: str = Query("all")):
+def charts_profit_by_month(start_date: str = StrOpt(), end_date: str = StrOpt(), customer_type: str = Query("all")):
+    start_date, end_date = _sanitize_dates(start_date, end_date)
     df = _safe_chart_call(get_profit_by_month, start_date, end_date, customer_type)
     return {"data": _to_records(df)}
 
@@ -94,25 +123,29 @@ def charts_profit_by_month(start_date: str = StrOpt, end_date: str = StrOpt, cus
 # Customer
 # ---------------------------------------------------------------------------
 @router.get("/new-vs-returning")
-def charts_new_vs_returning(start_date: str = StrOpt, end_date: str = StrOpt, customer_type: str = Query("all")):
+def charts_new_vs_returning(start_date: str = StrOpt(), end_date: str = StrOpt(), customer_type: str = Query("all")):
+    start_date, end_date = _sanitize_dates(start_date, end_date)
     df = _safe_chart_call(get_new_vs_returning_customer_sales, start_date, end_date, customer_type)
     return {"data": _to_records(df)}
 
 
 @router.get("/new-customers-over-time")
-def charts_new_customers_over_time(start_date: str = StrOpt, end_date: str = StrOpt, customer_type: str = Query("all")):
+def charts_new_customers_over_time(start_date: str = StrOpt(), end_date: str = StrOpt(), customer_type: str = Query("all")):
+    start_date, end_date = _sanitize_dates(start_date, end_date)
     df = _safe_chart_call(get_new_customers_over_time, start_date, end_date, customer_type)
     return {"data": _to_records(df)}
 
 
 @router.get("/customers-by-location")
-def charts_customers_by_location(start_date: str = StrOpt, end_date: str = StrOpt, customer_type: str = Query("all")):
+def charts_customers_by_location(start_date: str = StrOpt(), end_date: str = StrOpt(), customer_type: str = Query("all")):
+    start_date, end_date = _sanitize_dates(start_date, end_date)
     df = _safe_chart_call(get_customers_by_location, start_date, end_date, customer_type)
     return {"data": _to_records(df)}
 
 
 @router.get("/customer-retention-rate")
-def charts_retention(start_date: str = StrOpt, end_date: str = StrOpt, customer_type: str = Query("all")):
+def charts_retention(start_date: str = StrOpt(), end_date: str = StrOpt(), customer_type: str = Query("all")):
+    start_date, end_date = _sanitize_dates(start_date, end_date)
     df = _safe_chart_call(get_customer_retention_rate, start_date, end_date, customer_type)
     return {"data": _to_records(df)}
 
@@ -121,7 +154,8 @@ def charts_retention(start_date: str = StrOpt, end_date: str = StrOpt, customer_
 # Product
 # ---------------------------------------------------------------------------
 @router.get("/total-sales-by-product")
-def charts_sales_by_product(start_date: str = StrOpt, end_date: str = StrOpt, customer_type: str = Query("all")):
+def charts_sales_by_product(start_date: str = StrOpt(), end_date: str = StrOpt(), customer_type: str = Query("all")):
+    start_date, end_date = _sanitize_dates(start_date, end_date)
     df = _safe_chart_call(get_total_sales_by_product, start_date, end_date, customer_type)
     return {"data": _to_records(df)}
 
@@ -130,28 +164,31 @@ def charts_sales_by_product(start_date: str = StrOpt, end_date: str = StrOpt, cu
 # Financial (CAC, CLV, CAC/CLV)
 # ---------------------------------------------------------------------------
 @router.get("/customer-acquisition-cost")
-def charts_cac(start_date: str = StrOpt, end_date: str = StrOpt):
+def charts_cac(start_date: str = StrOpt(), end_date: str = StrOpt()):
+    start_date, end_date = _sanitize_dates(start_date, end_date)
     df = _safe_chart_call(get_customer_acquisition_cost, start_date, end_date)
     return {"data": _to_records(df)}
 
 
 @router.get("/customer-lifetime-value")
 def charts_clv(
-    start_date: str = StrOpt,
-    end_date: str = StrOpt,
+    start_date: str = StrOpt(),
+    end_date: str = StrOpt(),
     customer_type: str = Query("all"),
     customer_lifespan_months: int = Query(12, ge=1, le=60),
 ):
+    start_date, end_date = _sanitize_dates(start_date, end_date)
     df = _safe_chart_call(get_customer_lifetime_value, start_date, end_date, customer_type, customer_lifespan_months)
     return {"data": _to_records(df)}
 
 
 @router.get("/cac-clv-ratio-over-time")
 def charts_cac_clv(
-    start_date: str = StrOpt,
-    end_date: str = StrOpt,
+    start_date: str = StrOpt(),
+    end_date: str = StrOpt(),
     customer_lifespan_months: int = Query(12, ge=1, le=60),
 ):
+    start_date, end_date = _sanitize_dates(start_date, end_date)
     df = _safe_chart_call(get_cac_clv_ratio_over_time, start_date, end_date, customer_lifespan_months)
     return {"data": _to_records(df)}
 
@@ -160,13 +197,15 @@ def charts_cac_clv(
 # Orders
 # ---------------------------------------------------------------------------
 @router.get("/total-orders-by-month")
-def charts_orders_by_month(start_date: str = StrOpt, end_date: str = StrOpt, customer_type: str = Query("all")):
+def charts_orders_by_month(start_date: str = StrOpt(), end_date: str = StrOpt(), customer_type: str = Query("all")):
+    start_date, end_date = _sanitize_dates(start_date, end_date)
     df = _safe_chart_call(get_total_orders_by_month, start_date, end_date, customer_type)
     return {"data": _to_records(df)}
 
 
 @router.get("/average-order-value-over-time")
-def charts_aov_over_time(start_date: str = StrOpt, end_date: str = StrOpt, customer_type: str = Query("all")):
+def charts_aov_over_time(start_date: str = StrOpt(), end_date: str = StrOpt(), customer_type: str = Query("all")):
+    start_date, end_date = _sanitize_dates(start_date, end_date)
     df = _safe_chart_call(get_average_order_value_over_time, start_date, end_date, customer_type)
     return {"data": _to_records(df)}
 
@@ -207,3 +246,5 @@ def charts_revenue_comparison(
 @router.get("/month-names")
 def charts_month_names():
     return {i: get_month_name(i) for i in range(1, 13)}
+
+

@@ -5,7 +5,10 @@ Simple helpers for building SQL queries with filters
 Eliminates duplicated filter logic across 18 chart files
 """
 
+import re
 from typing import Tuple, List, Optional
+
+_DATE_RE = re.compile(r'^\d{4}-\d{2}-\d{2}$')
 
 
 def build_customer_filter(
@@ -42,17 +45,19 @@ def build_date_filter(
     date_column: str = 'dt.full_date'
 ) -> Tuple[str, List]:
     """
-    Build date range filter SQL clause
+    Build date range filter SQL clause.
+    Passes date strings directly with explicit ::date cast so PostgreSQL
+    handles the conversion regardless of column type.
     """
     sql = ""
     params = []
     
-    if start_date:
-        sql += f" AND {date_column} >= %s"
+    if start_date and _DATE_RE.match(start_date):
+        sql += f" AND {date_column} >= %s::date"
         params.append(start_date)
     
-    if end_date:
-        sql += f" AND {date_column} <= %s"
+    if end_date and _DATE_RE.match(end_date):
+        sql += f" AND {date_column} <= %s::date"
         params.append(end_date)
     
     return (sql, params)
