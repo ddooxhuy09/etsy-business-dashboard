@@ -175,10 +175,10 @@ def charts_clv(
     start_date: str = StrOpt(),
     end_date: str = StrOpt(),
     customer_type: str = Query("all"),
-    customer_lifespan_months: int = Query(12, ge=1, le=60),
+    period_days: int = Query(30, ge=1, le=365),
 ):
     start_date, end_date = _sanitize_dates(start_date, end_date)
-    df = _safe_chart_call(get_customer_lifetime_value, start_date, end_date, customer_type, customer_lifespan_months)
+    df = _safe_chart_call(get_customer_lifetime_value, start_date, end_date, customer_type, period_days)
     return {"data": _to_records(df)}
 
 
@@ -186,10 +186,9 @@ def charts_clv(
 def charts_cac_clv(
     start_date: str = StrOpt(),
     end_date: str = StrOpt(),
-    customer_lifespan_months: int = Query(12, ge=1, le=60),
 ):
     start_date, end_date = _sanitize_dates(start_date, end_date)
-    df = _safe_chart_call(get_cac_clv_ratio_over_time, start_date, end_date, customer_lifespan_months)
+    df = _safe_chart_call(get_cac_clv_ratio_over_time, start_date, end_date)
     return {"data": _to_records(df)}
 
 

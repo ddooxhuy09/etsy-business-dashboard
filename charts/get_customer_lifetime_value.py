@@ -1,84 +1,76 @@
 """
-Customer Lifetime Value Chart - REFACTORED
-Uses shared utilities to eliminate code duplication
+Customer Lifetime Value (LTV) Chart
+Formula: LTV = AOV × Average Purchase Frequency Rate
+- AOV = Total Revenue / Total Orders
+- Avg Purchase Frequency = Total Orders / Total Unique Customers
+- All calculated within the same time period (30, 60, or 90 days)
 """
-from charts._streamlit_shim import st  # noqa: F401
-from utils.chart_helpers import execute_chart_query, render_chart_description
-from utils.query_builder import build_customer_filter
+from utils.chart_helpers import execute_chart_query
 
 
-def get_customer_lifetime_value(start_date: str = None, end_date: str = None, customer_type: str = 'all', customer_lifespan_months: int = 12):
-    """Get customer lifetime value"""
-    s = start_date or '2000-01-01'
-    e = end_date or '2099-12-31'
-    cust_sql, _ = build_customer_filter(customer_type, 'fs')
-    date_cond = " AND dt.full_date >= %s::date AND dt.full_date <= %s::date"
-    sql = """
-    SELECT ROUND(
-        (
-            -- Average Revenue per Customer
-            (SELECT SUM(COALESCE(fs.item_total, 0))
-             FROM fact_sales fs
-             JOIN dim_time dt ON fs.sale_date_key = dt.time_key
-             WHERE 1=1""" + date_cond + cust_sql + """) * 1.0 /
-            NULLIF((SELECT COUNT(DISTINCT fs.customer_key)
-                    FROM fact_sales fs
-                    JOIN dim_time dt ON fs.sale_date_key = dt.time_key
-                    WHERE 1=1""" + date_cond + cust_sql + """), 0)
-            *
-            -- Customer Lifespan
-            %s
-            -
-            -- Total Costs of Serving the Customer
-            (
-                SELECT
-                    SUM(COALESCE(fp.fees, 0)) +
-                    SUM(COALESCE(fp.posted_fees, 0)) +
-                    SUM(COALESCE(fp.adjusted_fees, 0)) +
-                    SUM(COALESCE(dim_order.card_processing_fees, 0)) +
-                    SUM(COALESCE(dim_order.adjusted_card_processing_fees, 0)) +
-                    SUM(COALESCE(fs.discount_amount, 0)) +
-                    SUM(COALESCE(fs.shipping_discount, 0))
-                FROM fact_sales fs
-                JOIN fact_payments fp ON fs.order_key = fp.order_key
-                JOIN dim_order ON fs.order_key = dim_order.order_key
-                JOIN dim_time dt ON fs.sale_date_key = dt.time_key
-                WHERE 1=1""" + date_cond + cust_sql + """
-            ) * 1.0 /
-            NULLIF((SELECT COUNT(DISTINCT fs.customer_key)
-                    FROM fact_sales fs
-                    JOIN dim_time dt ON fs.sale_date_key = dt.time_key
-                    WHERE 1=1""" + date_cond + cust_sql + """), 0)
-        )
-    , 2) AS "CLV (USD)"
+def get_customer_lifetime_value(start_date: str = None, end_date: str = None,
+                                customer_type: str = 'all', period_days: int = 30):
     """
-    params = [s, e, s, e, customer_lifespan_months, s, e, s, e]
-    
-    return execute_chart_query(sql, tuple(params))
+    Calculate LTV = AOV × Avg Purchase Frequency for a given lookback window.
 
-
-def render_customer_lifetime_value_description(start_date_str, end_date_str, customer_type):
-    """Render description for customer lifetime value chart"""
-    description_content = """
-    **GIÁ TRỊ KHÁCH HÀNG TRỌN ĐỜI (CLV) - USD**
-
-    **Công thức:** CLV = (Average Revenue per Customer × Customer Lifespan) − Total Costs of Serving the Customer
-
-    - **Average Revenue per Customer**: Doanh thu trung bình mỗi khách hàng
-    - **Customer Lifespan**: Tuổi thọ khách hàng (có thể điều chỉnh qua filter customer_lifespan_months, mặc định 12 tháng)
-    - **Total Costs of Serving**: Tổng chi phí phục vụ khách hàng bao gồm:
-      - fees, posted_fees, adjusted_fees (từ fact_payments) (Fees, Posted Fees, Adjusted Fees trong file EtsyDirectCheckoutPayments2025-1.csv)
-      - card_processing_fees, adjusted_card_processing_fees (từ dim_order) (Card Processing Fees, Adjusted Card Processing Fees trong file EtsySoldOrders2025-1.csv)
-      - discount_amount, shipping_discount (từ fact_sales) (Discount Amount, Shipping Discount trong file EtsySoldOrderItems2025-1.csv)
-
-    Chỉ số này cho thấy lợi nhuận thực tế từ mỗi khách hàng trong suốt vòng đời (USD).
-    Có thể điều chỉnh Customer Lifespan theo nhu cầu phân tích (theo ngày, tháng, năm).
+    Args:
+        start_date / end_date: ignored when period_days is used;
+            the window is [end_ref - period_days, end_ref] where
+            end_ref = end_date or the latest sale date.
+        customer_type: 'all' | 'new' | 'return'
+        period_days: lookback window in days (30, 60, or 90)
     """
-    
-    render_chart_description(
-        chart_name="customer_lifetime_value",
-        description_content=description_content,
-        start_date_str=start_date_str,
-        end_date_str=end_date_str,
-        customer_type=customer_type
+    # Build customer filter
+    if customer_type == 'new':
+        cust_filter = """
+            AND fs.customer_key IN (
+                SELECT customer_key FROM fact_sales
+                GROUP BY customer_key HAVING COUNT(DISTINCT order_key) = 1
+            )"""
+    elif customer_type == 'return':
+        cust_filter = """
+            AND fs.customer_key IN (
+                SELECT customer_key FROM fact_sales
+                GROUP BY customer_key HAVING COUNT(DISTINCT order_key) > 1
+            )"""
+    else:
+        cust_filter = ""
+
+    sql = f"""
+    WITH date_range AS (
+        SELECT
+            COALESCE(%s::date, (SELECT MAX(dt.full_date) FROM fact_sales fs2 JOIN dim_time dt ON fs2.sale_date_key = dt.time_key))
+                AS end_ref
+    ),
+    period AS (
+        SELECT
+            (end_ref - INTERVAL '1 day' * %s)::date AS period_start,
+            end_ref AS period_end
+        FROM date_range
     )
+    SELECT
+        ROUND(
+            COALESCE(SUM(fs.item_total), 0)::numeric
+            / NULLIF(COUNT(DISTINCT fs.order_key), 0)
+        , 2) AS "AOV (USD)",
+
+        ROUND(
+            COUNT(DISTINCT fs.order_key)::numeric
+            / NULLIF(COUNT(DISTINCT fs.customer_key), 0)
+        , 2) AS "Avg Purchase Frequency",
+
+        ROUND(
+            (COALESCE(SUM(fs.item_total), 0)::numeric / NULLIF(COUNT(DISTINCT fs.order_key), 0))
+            *
+            (COUNT(DISTINCT fs.order_key)::numeric / NULLIF(COUNT(DISTINCT fs.customer_key), 0))
+        , 2) AS "LTV (USD)"
+
+    FROM fact_sales fs
+    JOIN dim_time dt ON fs.sale_date_key = dt.time_key
+    CROSS JOIN period p
+    WHERE dt.full_date BETWEEN p.period_start AND p.period_end
+    {cust_filter}
+    """
+
+    params = (end_date, period_days)
+    return execute_chart_query(sql, params)

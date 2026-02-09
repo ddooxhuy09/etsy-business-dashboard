@@ -149,28 +149,32 @@ export const CHART_ANNOTATIONS = {
       </div>
     ),
   },
-  clv: {
-    title: 'Giá trị khách hàng trọn đời (CLV)',
+  ltv: {
+    title: 'Giá trị vòng đời khách hàng (LTV)',
     content: (
       <div style={{ fontSize: 13, lineHeight: 1.7 }}>
-        <strong>Công thức:</strong> CLV = (Doanh thu TB mỗi khách × Tuổi thọ khách) − Chi phí phục vụ TB mỗi khách
+        <strong>Công thức:</strong> LTV = AOV × Tần suất mua trung bình
         <ul style={{ marginTop: 8, marginBottom: 0, paddingLeft: 20 }}>
-          <li><strong>Doanh thu TB mỗi khách</strong>: SUM(Item Total) / COUNT(DISTINCT customer_key) — Item Total từ EtsySoldOrderItems</li>
-          <li><strong>Tuổi thọ khách hàng</strong>: Mặc định 12 tháng (có thể điều chỉnh qua filter Lifespan)</li>
-          <li><strong>Chi phí phục vụ TB mỗi khách</strong>: Tổng (Fees + Posted Fees + Adjusted Fees từ EtsyDirectCheckoutPayments; Card Processing Fees + Adjusted Card Processing Fees từ EtsySoldOrders; Discount Amount + Shipping Discount từ EtsySoldOrderItems) ÷ Số khách hàng</li>
+          <li><strong>AOV (Average Order Value)</strong>: Tổng doanh thu / Tổng số đơn hàng trong kỳ</li>
+          <li><strong>Avg Purchase Frequency</strong>: Tổng số đơn hàng / Tổng số khách hàng trong kỳ</li>
         </ul>
+        <p style={{ marginTop: 8, marginBottom: 0, fontStyle: 'italic', color: '#666' }}>
+          AOV và Tần suất mua được tính cho cùng một khoảng thời gian (30, 60, hoặc 90 ngày).
+        </p>
       </div>
     ),
   },
   cacClvRatio: {
-    title: 'CAC vs CLV theo tháng và tỷ lệ CLV/CAC',
+    title: 'LTV/CAC Ratio theo tháng (30d / 60d / 90d)',
     content: (
       <div style={{ fontSize: 13, lineHeight: 1.7 }}>
         <strong>Theo từng tháng:</strong>
         <ul style={{ marginTop: 8, marginBottom: 0, paddingLeft: 20 }}>
           <li><strong>CAC</strong>: Tổng Marketing fees (Fees &amp; Taxes, Type=Marketing từ statement) / Số khách mới trong tháng</li>
-          <li><strong>CLV</strong>: ARPU tháng × Lifespan − Chi phí TB/khách trong tháng (tương tự CLV)</li>
-          <li><strong>CLV/CAC (x)</strong>: CLV ÷ CAC</li>
+          <li><strong>LTV(30d)</strong>: AOV × Avg Freq tính trên 30 ngày gần nhất tính đến cuối tháng</li>
+          <li><strong>LTV(60d)</strong>: AOV × Avg Freq tính trên 60 ngày gần nhất tính đến cuối tháng</li>
+          <li><strong>LTV(90d)</strong>: AOV × Avg Freq tính trên 90 ngày gần nhất tính đến cuối tháng</li>
+          <li><strong>LTV/CAC (x)</strong>: LTV ÷ CAC — 3 đường line cho 3 window</li>
         </ul>
       </div>
     ),

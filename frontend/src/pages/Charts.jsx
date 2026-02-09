@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { DatePicker, Select, InputNumber, Spin, Card, Row, Col, Space, Button, Popover } from 'antd';
+import { DatePicker, Select, Spin, Card, Row, Col, Space, Button, Popover } from 'antd';
 import { InfoCircleOutlined } from '@ant-design/icons';
 import createPlotlyComponent from 'react-plotly.js/factory';
 import { CHART_ANNOTATIONS } from '../constants/chartAnnotations';
@@ -66,15 +66,14 @@ export default function Charts() {
   const [fromDate, setFromDate] = useState(null);
   const [toDate, setToDate] = useState(null);
   const [customerType, setCustomerType] = useState('all');
-  const [lifespan, setLifespan] = useState(12);
   const [m1y, setM1y] = useState(new Date().getFullYear());
   const [m1m, setM1m] = useState(new Date().getMonth() + 1);
   const [m2y, setM2y] = useState(new Date().getFullYear() - 1);
   const [m2m, setM2m] = useState(new Date().getMonth() + 1);
 
   const resolved = useMemo(() => {
-    return { ...buildResolved(year, month, fromDate, toDate), customer_type: customerType, customer_lifespan_months: lifespan };
-  }, [year, month, fromDate, toDate, customerType, lifespan]);
+    return { ...buildResolved(year, month, fromDate, toDate), customer_type: customerType };
+  }, [year, month, fromDate, toDate, customerType]);
 
   // KPIs
   const [kpi, setKpi] = useState({ revenue: null, orders: null, customers: null, aov: null });
@@ -209,18 +208,32 @@ export default function Charts() {
     return () => { active = false; };
   }, [resolved.start_date, resolved.end_date]);
 
-  // CLV
-  const [clv, setClv] = useState(null);
-  const [clvLoad, setClvLoad] = useState(false);
+  // LTV (3 periods: 30, 60, 90 days)
+  const [ltv30, setLtv30] = useState(null);
+  const [ltv60, setLtv60] = useState(null);
+  const [ltv90, setLtv90] = useState(null);
+  const [ltvLoad, setLtvLoad] = useState(false);
   useEffect(() => {
     let active = true;
-    setClvLoad(true);
-    ChartsApi.chartsClv(resolved)
-      .then((r) => { if (active) setClv(r?.data?.[0]?.['CLV (USD)']); })
-      .catch(() => { if (active) setClv(null); })
-      .finally(() => { if (active) setClvLoad(false); });
+    setLtvLoad(true);
+    Promise.all([
+      ChartsApi.chartsLtv(resolved, 30),
+      ChartsApi.chartsLtv(resolved, 60),
+      ChartsApi.chartsLtv(resolved, 90),
+    ])
+      .then(([r30, r60, r90]) => {
+        if (!active) return;
+        setLtv30(r30?.data?.[0] || null);
+        setLtv60(r60?.data?.[0] || null);
+        setLtv90(r90?.data?.[0] || null);
+      })
+      .catch(() => {
+        if (!active) return;
+        setLtv30(null); setLtv60(null); setLtv90(null);
+      })
+      .finally(() => { if (active) setLtvLoad(false); });
     return () => { active = false; };
-  }, [resolved.start_date, resolved.end_date, resolved.customer_type, resolved.customer_lifespan_months]);
+  }, [resolved.start_date, resolved.end_date, resolved.customer_type]);
 
   // CAC/CLV over time
   const [cacClv, setCacClv] = useState([]);
@@ -233,7 +246,7 @@ export default function Charts() {
       .catch(() => { if (active) setCacClv([]); })
       .finally(() => { if (active) setCacClvLoad(false); });
     return () => { active = false; };
-  }, [resolved.start_date, resolved.end_date, resolved.customer_lifespan_months]);
+  }, [resolved.start_date, resolved.end_date]);
 
   // Orders by month
   const [ordMonth, setOrdMonth] = useState([]);
@@ -332,10 +345,6 @@ export default function Charts() {
             style={{ width: 160 }}
             options={custOpts}
           />
-          <Space>
-            <span style={{ fontSize: 13, color: '#666' }}>Lifespan (mo):</span>
-            <InputNumber min={1} max={60} value={lifespan} onChange={setLifespan} style={{ width: 72 }} />
-          </Space>
         </Space>
       </Card>
 
@@ -556,44 +565,67 @@ export default function Charts() {
         </Col>
       </Row>
 
+      <Card title="Customer Acquisition Cost (CAC)" className="chart-container" style={{ marginBottom: 16 }}>
+        <div style={{ position: 'relative' }}>
+          <div style={{ position: 'absolute', top: 0, right: 0, zIndex: 1 }}>
+            <ChartAnnotationButton annotationKey="cac" />
+          </div>
+          <Spin spinning={cacLoad}>
+            <div style={{ textAlign: 'center', padding: '32px 0' }}>
+              <div style={{ fontSize: 28, fontWeight: 700, color: '#9c27b0' }}>
+                {cac != null ? `$${Number(cac).toLocaleString('en-US', { minimumFractionDigits: 2 })}` : '—'}
+              </div>
+              <div style={{ fontSize: 12, color: '#999', marginTop: 8 }}>CAC (USD)</div>
+            </div>
+          </Spin>
+        </div>
+      </Card>
+
       <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
-        <Col span={12}>
-          <Card title="Customer Acquisition Cost (CAC)" className="chart-container">
-            <div style={{ position: 'relative' }}>
-              <div style={{ position: 'absolute', top: 0, right: 0, zIndex: 1 }}>
-                <ChartAnnotationButton annotationKey="cac" />
-              </div>
-            <Spin spinning={cacLoad}>
-              <div style={{ textAlign: 'center', padding: '32px 0' }}>
-                <div style={{ fontSize: 28, fontWeight: 700, color: '#9c27b0' }}>
-                  {cac != null ? `$${Number(cac).toLocaleString('en-US', { minimumFractionDigits: 2 })}` : '—'}
+        {[
+          { period: 30, data: ltv30, color: '#00bcd4' },
+          { period: 60, data: ltv60, color: '#0097a7' },
+          { period: 90, data: ltv90, color: '#00796b' },
+        ].map(({ period, data, color }) => (
+          <Col span={8} key={period}>
+            <Card title={`LTV (${period} ngày)`} className="chart-container">
+              <div style={{ position: 'relative' }}>
+                <div style={{ position: 'absolute', top: 0, right: 0, zIndex: 1 }}>
+                  <ChartAnnotationButton annotationKey="ltv" />
                 </div>
-                <div style={{ fontSize: 12, color: '#999', marginTop: 8 }}>CAC (USD)</div>
+                <Spin spinning={ltvLoad}>
+                  <div style={{ textAlign: 'center', padding: '16px 0' }}>
+                    <div style={{ fontSize: 28, fontWeight: 700, color }}>
+                      {data?.['LTV (USD)'] != null ? `$${Number(data['LTV (USD)']).toLocaleString('en-US', { minimumFractionDigits: 2 })}` : '—'}
+                    </div>
+                    <div style={{ fontSize: 12, color: '#999', marginTop: 4 }}>LTV (USD)</div>
+                  </div>
+                  <Row gutter={8} style={{ marginTop: 8 }}>
+                    <Col span={12}>
+                      <div style={{ textAlign: 'center', padding: 8, background: '#fafafa', borderRadius: 6 }}>
+                        <div style={{ fontSize: 11, color: '#666' }}>AOV</div>
+                        <div style={{ fontSize: 16, fontWeight: 600 }}>
+                          {data?.['AOV (USD)'] != null ? `$${Number(data['AOV (USD)']).toFixed(2)}` : '—'}
+                        </div>
+                      </div>
+                    </Col>
+                    <Col span={12}>
+                      <div style={{ textAlign: 'center', padding: 8, background: '#fafafa', borderRadius: 6 }}>
+                        <div style={{ fontSize: 11, color: '#666' }}>Avg Freq</div>
+                        <div style={{ fontSize: 16, fontWeight: 600 }}>
+                          {data?.['Avg Purchase Frequency'] != null ? Number(data['Avg Purchase Frequency']).toFixed(2) : '—'}
+                        </div>
+                      </div>
+                    </Col>
+                  </Row>
+                </Spin>
               </div>
-            </Spin>
-            </div>
-          </Card>
-        </Col>
-        <Col span={12}>
-          <Card title="Customer Lifetime Value (CLV)" className="chart-container">
-            <div style={{ position: 'relative' }}>
-              <div style={{ position: 'absolute', top: 0, right: 0, zIndex: 1 }}>
-                <ChartAnnotationButton annotationKey="clv" />
-              </div>
-            <Spin spinning={clvLoad}>
-              <div style={{ textAlign: 'center', padding: '32px 0' }}>
-                <div style={{ fontSize: 28, fontWeight: 700, color: '#00bcd4' }}>
-                  {clv != null ? `$${Number(clv).toLocaleString('en-US', { minimumFractionDigits: 2 })}` : '—'}
-                </div>
-                <div style={{ fontSize: 12, color: '#999', marginTop: 8 }}>CLV (USD)</div>
-              </div>
-            </Spin>
-            </div>
-          </Card>
-        </Col>
+            </Card>
+          </Col>
+        ))}
       </Row>
 
-      <Card title="Monthly CAC vs CLV with CLV/CAC Ratio" className="chart-container" style={{ marginBottom: 16 }}>
+      <Card title="Monthly LTV/CAC Ratio (30d / 60d / 90d)" className="chart-container" style={{ marginBottom: 16 }}>
         <div style={{ position: 'relative' }}>
           <div style={{ position: 'absolute', top: 0, right: 0, zIndex: 1 }}>
             <ChartAnnotationButton annotationKey="cacClvRatio" />
@@ -603,11 +635,17 @@ export default function Charts() {
             <div className="plotly-chart-wrapper">
               <Plot
                 data={[
-                  { x: cacClv.map((r) => r.Month), y: cacClv.map((r) => r['CAC (USD)']), type: 'bar', name: 'CAC (USD)', marker: { color: '#9C27B0' } },
-                  { x: cacClv.map((r) => r.Month), y: cacClv.map((r) => r['CLV (USD)']), type: 'bar', name: 'CLV (USD)', marker: { color: '#00BCD4' } },
-                  { x: cacClv.map((r) => r.Month), y: cacClv.map((r) => r['CLV/CAC (x)']), type: 'scatter', mode: 'lines+markers', name: 'CLV/CAC (x)', yaxis: 'y2', line: { color: '#FFA726', width: 2 } },
+                  { x: cacClv.map((r) => r.Month), y: cacClv.map((r) => r['CAC (USD)']), type: 'bar', name: 'CAC (USD)', marker: { color: '#9C27B0', opacity: 0.5 } },
+                  { x: cacClv.map((r) => r.Month), y: cacClv.map((r) => r['LTV(30d)/CAC']), type: 'scatter', mode: 'lines+markers', name: 'LTV(30d)/CAC', yaxis: 'y2', line: { color: '#00bcd4', width: 2 } },
+                  { x: cacClv.map((r) => r.Month), y: cacClv.map((r) => r['LTV(60d)/CAC']), type: 'scatter', mode: 'lines+markers', name: 'LTV(60d)/CAC', yaxis: 'y2', line: { color: '#FFA726', width: 2 } },
+                  { x: cacClv.map((r) => r.Month), y: cacClv.map((r) => r['LTV(90d)/CAC']), type: 'scatter', mode: 'lines+markers', name: 'LTV(90d)/CAC', yaxis: 'y2', line: { color: '#4CAF50', width: 2 } },
                 ]}
-                layout={{ ...baseLayout, barmode: 'group', yaxis2: { overlaying: 'y', side: 'right', title: 'CLV/CAC (x)' }, legend: { x: 1, y: 1.1, orientation: 'h' } }}
+                layout={{
+                  ...baseLayout,
+                  yaxis: { title: 'CAC (USD)' },
+                  yaxis2: { overlaying: 'y', side: 'right', title: 'LTV/CAC (x)' },
+                  legend: { x: 0, y: 1.15, orientation: 'h' },
+                }}
                 config={{ displayModeBar: true, displaylogo: false, responsive: true }}
               />
             </div>

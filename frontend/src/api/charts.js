@@ -42,8 +42,8 @@ export function chartsSalesByProduct(f) {
 export function chartsCac(f) {
   return API.get('/api/charts/customer-acquisition-cost', { params: params(f) }).then((r) => r.data);
 }
-export function chartsClv(f) {
-  return API.get('/api/charts/customer-lifetime-value', { params: params(f) }).then((r) => r.data);
+export function chartsLtv(f, periodDays = 30) {
+  return API.get('/api/charts/customer-lifetime-value', { params: params({ ...f, period_days: periodDays }) }).then((r) => r.data);
 }
 export function chartsCacClv(f) {
   return API.get('/api/charts/cac-clv-ratio-over-time', { params: params(f) }).then((r) => r.data);
