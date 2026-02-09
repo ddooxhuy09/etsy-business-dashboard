@@ -58,22 +58,31 @@ def clean_statement_data(df: pd.DataFrame) -> pd.DataFrame:
     
     # After cleaning, convert VND amounts to USD by dividing by exchange rate
     if 'Currency' in df_clean.columns:
-        try:
-            vnd_mask = df_clean['Currency'].astype(str).str.upper().eq('VND')
-            if vnd_mask.any():
-                for col in numeric_columns:
-                    if col in df_clean.columns:
-                        df_clean.loc[vnd_mask, col] = pd.to_numeric(
-                            df_clean.loc[vnd_mask, col], errors='coerce'
-                        ) / EXCHANGE_RATE
-                # Round to 2 decimals
-                for col in numeric_columns:
-                    if col in df_clean.columns:
-                        df_clean[col] = pd.to_numeric(df_clean[col], errors='coerce').round(2)
-                # Update currency to USD
-                df_clean.loc[vnd_mask, 'Currency'] = 'USD'
-        except Exception as e:
-            logger.warning(f"Could not convert statement VND to USD: {e}")
+        vnd_mask = df_clean['Currency'].astype(str).str.upper().eq('VND')
+        vnd_count = int(vnd_mask.sum())
+        logger.info(f"VND conversion: {vnd_count} VND rows found, EXCHANGE_RATE={EXCHANGE_RATE}")
+
+        if vnd_count > 0:
+            # Convert each numeric column from VND to USD
+            for col in numeric_columns:
+                if col in df_clean.columns:
+                    raw_vals = df_clean.loc[vnd_mask, col]
+                    numeric_vals = pd.to_numeric(raw_vals, errors='coerce')
+                    converted = numeric_vals / EXCHANGE_RATE
+                    df_clean[col] = pd.to_numeric(df_clean[col], errors='coerce')
+                    df_clean.loc[vnd_mask, col] = converted
+                    logger.info(f"  Converted {col}: sample before={numeric_vals.dropna().head(2).tolist()}, after={converted.dropna().head(2).tolist()}")
+
+            # Round to 2 decimals
+            for col in numeric_columns:
+                if col in df_clean.columns:
+                    df_clean[col] = df_clean[col].round(2)
+
+            # Update currency to USD
+            df_clean.loc[vnd_mask, 'Currency'] = 'USD'
+            logger.info(f"  Currency updated to USD. Verify sample: {df_clean[numeric_columns[0]].dropna().head(3).tolist()}")
+    else:
+        logger.warning("No 'Currency' column found in statement data")
     
     # Clean text columns (skip Type, Title, Info to keep original content)
     # Note: Type, Title, Info columns are kept as-is without cleaning
