@@ -1,6 +1,6 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { DatePicker, Select, Spin, Card, Row, Col, Space, Button, Popover } from 'antd';
-import { InfoCircleOutlined } from '@ant-design/icons';
+import { InfoCircleOutlined, SwapOutlined } from '@ant-design/icons';
 import createPlotlyComponent from 'react-plotly.js/factory';
 import { CHART_ANNOTATIONS } from '../constants/chartAnnotations';
 import Plotly from 'plotly.js-dist-min';
@@ -10,6 +10,8 @@ import '../styles/charts.css';
 const Plot = createPlotlyComponent(Plotly);
 
 const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+
+const EXCHANGE_RATE = 24708.655;
 
 function ChartAnnotationButton({ annotationKey }) {
   const ann = CHART_ANNOTATIONS[annotationKey];
@@ -66,6 +68,23 @@ export default function Charts() {
   const [fromDate, setFromDate] = useState(null);
   const [toDate, setToDate] = useState(null);
   const [customerType, setCustomerType] = useState('all');
+  const [currency, setCurrency] = useState('USD');
+
+  // Currency conversion helpers
+  const cv = useCallback((val) => {
+    if (val == null) return null;
+    return currency === 'VND' ? Number(val) * EXCHANGE_RATE : Number(val);
+  }, [currency]);
+  const sym = currency === 'VND' ? '₫' : '$';
+  const fmtMoney = useCallback((val, decimals) => {
+    if (val == null) return '—';
+    const converted = currency === 'VND' ? Number(val) * EXCHANGE_RATE : Number(val);
+    if (currency === 'VND') return `₫${Math.round(converted).toLocaleString('vi-VN')}`;
+    const d = decimals != null ? decimals : 2;
+    return `$${converted.toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d })}`;
+  }, [currency]);
+  const curUnit = currency === 'VND' ? 'VND' : 'USD';
+
   const [m1y, setM1y] = useState(new Date().getFullYear());
   const [m1m, setM1m] = useState(new Date().getMonth() + 1);
   const [m2y, setM2y] = useState(new Date().getFullYear() - 1);
@@ -345,6 +364,14 @@ export default function Charts() {
             style={{ width: 160 }}
             options={custOpts}
           />
+          <Button
+            type={currency === 'VND' ? 'primary' : 'default'}
+            icon={<SwapOutlined />}
+            onClick={() => setCurrency((c) => (c === 'USD' ? 'VND' : 'USD'))}
+            style={{ fontWeight: 600 }}
+          >
+            {currency === 'USD' ? 'USD → VND' : 'VND → USD'}
+          </Button>
         </Space>
       </Card>
 
@@ -358,9 +385,9 @@ export default function Charts() {
               </div>
               <div className="kpi-label">Doanh thu</div>
             <Spin spinning={kpiLoad}>
-              <div className="kpi-value">{kpi.revenue != null ? `$${Number(kpi.revenue).toLocaleString('en-US', { minimumFractionDigits: 2 })}` : '—'}</div>
+              <div className="kpi-value">{fmtMoney(kpi.revenue)}</div>
             </Spin>
-              <div className="kpi-sub">Tổng doanh thu</div>
+              <div className="kpi-sub">Tổng doanh thu ({curUnit})</div>
             </div>
           </Card>
         </Col>
@@ -400,9 +427,9 @@ export default function Charts() {
               </div>
               <div className="kpi-label">AOV</div>
             <Spin spinning={kpiLoad}>
-              <div className="kpi-value">{kpi.aov != null ? `$${Number(kpi.aov).toLocaleString('en-US', { minimumFractionDigits: 2 })}` : '—'}</div>
+              <div className="kpi-value">{fmtMoney(kpi.aov)}</div>
             </Spin>
-              <div className="kpi-sub">Giá trị đơn hàng trung bình</div>
+              <div className="kpi-sub">Giá trị đơn hàng trung bình ({curUnit})</div>
             </div>
           </Card>
         </Col>
@@ -419,8 +446,8 @@ export default function Charts() {
               {revMonth.length > 0 ? (
                 <div className="plotly-chart-wrapper">
                   <Plot
-                    data={[{ x: revMonth.map((r) => r.Month), y: revMonth.map((r) => r['Revenue (USD)']), type: 'bar', name: 'Revenue (USD)' }]}
-                    layout={{ ...baseLayout, title: 'Monthly Revenue (USD)' }}
+                    data={[{ x: revMonth.map((r) => r.Month), y: revMonth.map((r) => cv(r['Revenue (USD)'])), type: 'bar', name: `Revenue (${curUnit})` }]}
+                    layout={{ ...baseLayout, title: `Monthly Revenue (${curUnit})` }}
                     config={{ displayModeBar: true, displaylogo: false, responsive: true }}
                   />
                 </div>
@@ -441,8 +468,8 @@ export default function Charts() {
               {profitMonth.length > 0 ? (
                 <div className="plotly-chart-wrapper">
                   <Plot
-                    data={[{ x: profitMonth.map((r) => r.Month), y: profitMonth.map((r) => r['Profit (USD)']), type: 'bar', name: 'Profit (USD)', marker: { color: '#1890ff' } }]}
-                    layout={{ ...baseLayout, title: 'Monthly Profit (USD)' }}
+                    data={[{ x: profitMonth.map((r) => r.Month), y: profitMonth.map((r) => cv(r['Profit (USD)'])), type: 'bar', name: `Profit (${curUnit})`, marker: { color: '#1890ff' } }]}
+                    layout={{ ...baseLayout, title: `Monthly Profit (${curUnit})` }}
                     config={{ displayModeBar: true, displaylogo: false, responsive: true }}
                   />
                 </div>
@@ -466,8 +493,8 @@ export default function Charts() {
               {newReturn.length > 0 ? (
                 <div className="plotly-chart-wrapper">
                   <Plot
-                    data={[{ values: newReturn.map((r) => r['Revenue (USD)']), labels: newReturn.map((r) => r['Customer Type']), type: 'pie', hole: 0.4, marker: { colors: ['#FF6B6B', '#4ECDC4'] } }]}
-                    layout={{ ...baseLayout, title: 'Revenue by Customer Type', showlegend: true }}
+                    data={[{ values: newReturn.map((r) => cv(r['Revenue (USD)'])), labels: newReturn.map((r) => r['Customer Type']), type: 'pie', hole: 0.4, marker: { colors: ['#FF6B6B', '#4ECDC4'] } }]}
+                    layout={{ ...baseLayout, title: `Revenue by Customer Type (${curUnit})`, showlegend: true }}
                     config={{ displayModeBar: true, displaylogo: false, responsive: true }}
                   />
                 </div>
@@ -551,8 +578,8 @@ export default function Charts() {
               {byProd.length > 0 ? (
                 <div className="plotly-chart-wrapper">
                   <Plot
-                    data={[{ x: byProd.map((r) => r['Revenue (USD)']), y: byProd.map((r) => r.Product), type: 'bar', orientation: 'h', marker: { color: '#10b981' } }]}
-                    layout={{ ...baseLayout, title: 'Top 10 by Revenue', xaxis: { title: 'Revenue (USD)' }, yaxis: { title: '' } }}
+                    data={[{ x: byProd.map((r) => cv(r['Revenue (USD)'])), y: byProd.map((r) => r.Product), type: 'bar', orientation: 'h', marker: { color: '#10b981' } }]}
+                    layout={{ ...baseLayout, title: `Top 10 by Revenue (${curUnit})`, xaxis: { title: `Revenue (${curUnit})` }, yaxis: { title: '' } }}
                     config={{ displayModeBar: true, displaylogo: false, responsive: true }}
                   />
                 </div>
@@ -573,9 +600,9 @@ export default function Charts() {
           <Spin spinning={cacLoad}>
             <div style={{ textAlign: 'center', padding: '32px 0' }}>
               <div style={{ fontSize: 28, fontWeight: 700, color: '#9c27b0' }}>
-                {cac != null ? `$${Number(cac).toLocaleString('en-US', { minimumFractionDigits: 2 })}` : '—'}
+                {fmtMoney(cac)}
               </div>
-              <div style={{ fontSize: 12, color: '#999', marginTop: 8 }}>CAC (USD)</div>
+              <div style={{ fontSize: 12, color: '#999', marginTop: 8 }}>CAC ({curUnit})</div>
             </div>
           </Spin>
         </div>
@@ -596,16 +623,16 @@ export default function Charts() {
                 <Spin spinning={ltvLoad}>
                   <div style={{ textAlign: 'center', padding: '16px 0' }}>
                     <div style={{ fontSize: 28, fontWeight: 700, color }}>
-                      {data?.['LTV (USD)'] != null ? `$${Number(data['LTV (USD)']).toLocaleString('en-US', { minimumFractionDigits: 2 })}` : '—'}
+                      {fmtMoney(data?.['LTV (USD)'])}
                     </div>
-                    <div style={{ fontSize: 12, color: '#999', marginTop: 4 }}>LTV (USD)</div>
+                    <div style={{ fontSize: 12, color: '#999', marginTop: 4 }}>LTV ({curUnit})</div>
                   </div>
                   <Row gutter={8} style={{ marginTop: 8 }}>
                     <Col span={12}>
                       <div style={{ textAlign: 'center', padding: 8, background: '#fafafa', borderRadius: 6 }}>
                         <div style={{ fontSize: 11, color: '#666' }}>AOV</div>
                         <div style={{ fontSize: 16, fontWeight: 600 }}>
-                          {data?.['AOV (USD)'] != null ? `$${Number(data['AOV (USD)']).toFixed(2)}` : '—'}
+                          {fmtMoney(data?.['AOV (USD)'])}
                         </div>
                       </div>
                     </Col>
@@ -635,14 +662,14 @@ export default function Charts() {
             <div className="plotly-chart-wrapper">
               <Plot
                 data={[
-                  { x: cacClv.map((r) => r.Month), y: cacClv.map((r) => r['CAC (USD)']), type: 'bar', name: 'CAC (USD)', marker: { color: '#9C27B0', opacity: 0.5 } },
+                  { x: cacClv.map((r) => r.Month), y: cacClv.map((r) => cv(r['CAC (USD)'])), type: 'bar', name: `CAC (${curUnit})`, marker: { color: '#9C27B0', opacity: 0.5 } },
                   { x: cacClv.map((r) => r.Month), y: cacClv.map((r) => r['LTV(30d)/CAC']), type: 'scatter', mode: 'lines+markers', name: 'LTV(30d)/CAC', yaxis: 'y2', line: { color: '#00bcd4', width: 2 } },
                   { x: cacClv.map((r) => r.Month), y: cacClv.map((r) => r['LTV(60d)/CAC']), type: 'scatter', mode: 'lines+markers', name: 'LTV(60d)/CAC', yaxis: 'y2', line: { color: '#FFA726', width: 2 } },
                   { x: cacClv.map((r) => r.Month), y: cacClv.map((r) => r['LTV(90d)/CAC']), type: 'scatter', mode: 'lines+markers', name: 'LTV(90d)/CAC', yaxis: 'y2', line: { color: '#4CAF50', width: 2 } },
                 ]}
                 layout={{
                   ...baseLayout,
-                  yaxis: { title: 'CAC (USD)' },
+                  yaxis: { title: `CAC (${curUnit})` },
                   yaxis2: { overlaying: 'y', side: 'right', title: 'LTV/CAC (x)' },
                   legend: { x: 0, y: 1.15, orientation: 'h' },
                 }}
@@ -689,8 +716,8 @@ export default function Charts() {
               {aovTime.length > 0 ? (
                 <div className="plotly-chart-wrapper">
                   <Plot
-                    data={[{ x: aovTime.map((r) => r.Date), y: aovTime.map((r) => r['AOV (USD)']), type: 'scatter', mode: 'lines+markers', line: { color: '#FF5722', width: 2 } }]}
-                    layout={{ ...baseLayout, title: 'AOV Over Time (USD)' }}
+                    data={[{ x: aovTime.map((r) => r.Date), y: aovTime.map((r) => cv(r['AOV (USD)'])), type: 'scatter', mode: 'lines+markers', line: { color: '#FF5722', width: 2 } }]}
+                    layout={{ ...baseLayout, title: `AOV Over Time (${curUnit})` }}
                     config={{ displayModeBar: true, displaylogo: false, responsive: true }}
                   />
                 </div>
@@ -721,10 +748,10 @@ export default function Charts() {
               <div className="plotly-chart-wrapper" style={{ marginBottom: 16 }}>
                 <Plot
                   data={[
-                    { x: cmp.data.filter((r) => r.Month === 'Month 1').map((r) => r.Day), y: cmp.data.filter((r) => r.Month === 'Month 1').map((r) => r['Revenue (USD)']), type: 'scatter', mode: 'lines+markers', name: `${cmp.month1_name}`, line: { color: '#FF6B6B', width: 2 } },
-                    { x: cmp.data.filter((r) => r.Month === 'Month 2').map((r) => r.Day), y: cmp.data.filter((r) => r.Month === 'Month 2').map((r) => r['Revenue (USD)']), type: 'scatter', mode: 'lines+markers', name: `${cmp.month2_name}`, line: { color: '#4ECDC4', width: 2 } },
+                    { x: cmp.data.filter((r) => r.Month === 'Month 1').map((r) => r.Day), y: cmp.data.filter((r) => r.Month === 'Month 1').map((r) => cv(r['Revenue (USD)'])), type: 'scatter', mode: 'lines+markers', name: `${cmp.month1_name}`, line: { color: '#FF6B6B', width: 2 } },
+                    { x: cmp.data.filter((r) => r.Month === 'Month 2').map((r) => r.Day), y: cmp.data.filter((r) => r.Month === 'Month 2').map((r) => cv(r['Revenue (USD)'])), type: 'scatter', mode: 'lines+markers', name: `${cmp.month2_name}`, line: { color: '#4ECDC4', width: 2 } },
                   ]}
-                  layout={{ ...baseLayout, title: 'Daily Revenue Comparison', xaxis: { title: 'Day of Month' }, yaxis: { title: 'Revenue (USD)' }, legend: { x: 1, y: 1.1, orientation: 'h' } }}
+                  layout={{ ...baseLayout, title: `Daily Revenue Comparison (${curUnit})`, xaxis: { title: 'Day of Month' }, yaxis: { title: `Revenue (${curUnit})` }, legend: { x: 1, y: 1.1, orientation: 'h' } }}
                   config={{ displayModeBar: true, displaylogo: false, responsive: true }}
                 />
               </div>
