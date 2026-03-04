@@ -48,7 +48,11 @@ def parse_description(description: str) -> dict:
         "6421", "6428",
     }
 
-    pattern = r'([A-Z0-9]+)_([A-Z0-9]+)_([A-Z0-9]+)(?:\s+(\d{4}))?'
+    # Hỗ trợ cả:
+    # - "DEF_MG01107417_03 6221 ..."
+    # - "TBL_BLO_TO01_6222 chart ..."
+    # → tức là PL account có thể đứng sau khoảng trắng hoặc thêm một dấu "_" nữa.
+    pattern = r'([A-Z0-9]+)_([A-Z0-9]+)_([A-Z0-9]+)(?:[_\s]+(\d{4}))?'
     match = re.search(pattern, description, flags=re.IGNORECASE)
     
     if match:

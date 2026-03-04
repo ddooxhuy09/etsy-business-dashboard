@@ -7,6 +7,8 @@ import pandas as pd
 
 from etl.builder.star_schema import StarSchema
 from etl.loaders.csv_loader import CSVLoader
+from api.db import execute_query
+from config import parse_period
 
 from etl.cleaners.process_statement import clean_statement_data
 from etl.cleaners.process_sold_orders import clean_sold_orders_data
@@ -51,6 +53,30 @@ class SimplifiedETLPipeline:
 
         return cleaned
 
+    def _clear_bank_fact_for_period(self) -> None:
+        """
+        Xoá dữ liệu fact_bank_transactions cho đúng period trước khi append lại.
+        Period dạng YYYY-MM (ví dụ: '2025-11').
+        """
+        year, month = parse_period(self.period)
+        start_date = f"{year:04d}-{month:02d}-01"
+        if month == 12:
+            end_year = year + 1
+            end_month = 1
+        else:
+            end_year = year
+            end_month = month + 1
+        end_date = f"{end_year:04d}-{end_month:02d}-01"
+
+        sql = """
+        DELETE FROM fact_bank_transactions f
+        USING dim_time t
+        WHERE f.transaction_date_key = t.time_key
+          AND t.full_date >= %s
+          AND t.full_date <  %s
+        """
+        execute_query(sql, (start_date, end_date))
+
     def run(self) -> bool:
         logger.info("Starting ETL for period=%s", self.period)
         loader = CSVLoader(period=self.period)
@@ -63,6 +89,14 @@ class SimplifiedETLPipeline:
         if not cleaned:
             logger.error("No datasets could be cleaned for period=%s", self.period)
             return False
+
+        # Trước khi build + load star schema, xoá dữ liệu bank fact của period này
+        # để tránh giữ lại các bản ghi cũ (ví dụ parse PL sai).
+        try:
+            self._clear_bank_fact_for_period()
+            logger.info("Cleared fact_bank_transactions for period=%s", self.period)
+        except Exception as e:
+            logger.error("Failed to clear fact_bank_transactions for period=%s: %s", self.period, e)
 
         builder = StarSchema()
         star = builder.build_complete_star_schema(cleaned)

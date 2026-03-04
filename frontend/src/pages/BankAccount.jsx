@@ -338,11 +338,11 @@ export default function BankAccount() {
         <Card size="small" title="Import Data" style={{ marginBottom: 16 }}>
           <Space direction="vertical" style={{ width: '100%' }}>
             <Text type="secondary">
-              Upload file CSV hoặc thêm từng dòng vào Bank Transactions. File CSV cần có các cột: Transaction Date, Reference No., Account Number, Account Name, Opening Date, Credit Amount, Debit Amount, Balance, Description.
+              Upload file CSV hoặc Excel (xlsx/xls) hoặc thêm từng dòng vào Bank Transactions. File cần có các cột: Transaction Date, Reference No., Account Number, Account Name, Opening Date, Credit Amount, Debit Amount, Balance, Description.
             </Text>
             <Space wrap>
               <Upload
-                accept=".csv"
+                accept=".csv,.xlsx,.xls"
                 showUploadList={false}
                 beforeUpload={handleUpload}
                 maxCount={1}
@@ -352,7 +352,7 @@ export default function BankAccount() {
                   icon={<UploadOutlined />}
                   loading={uploading}
                 >
-                  Upload CSV File
+                  Upload CSV / Excel
                 </Button>
               </Upload>
               <Button

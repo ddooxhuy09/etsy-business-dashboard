@@ -3,6 +3,7 @@ Profit & Loss API. Uses get_profit_loss_summary_table from dashboard/profit_loss
 Summary table uses utils.db_query -> api.db.run_query.
 """
 import math
+import logging
 import pandas as pd
 from fastapi import APIRouter, Query
 
@@ -15,8 +16,7 @@ from profit_loss_statement.profit_formula_config import (
 )
 
 router = APIRouter(prefix="/api/profit-loss", tags=["profit-loss"])
-
-StrOpt = Query(None, description="YYYY-MM-DD")
+logger = logging.getLogger(__name__)
 
 
 def _json_safe(v):
@@ -61,8 +61,8 @@ def get_formula_config():
 
 @router.get("/summary-table")
 def summary_table(
-    start_date: str = StrOpt,
-    end_date: str = StrOpt,
+    start_date: str = Query(None, description="YYYY-MM-DD"),
+    end_date: str = Query(None, description="YYYY-MM-DD"),
     view_mode: str = Query("month", description="month | year | month_year"),
     selected_items: str = Query(None, description="Comma-separated list of column names to subtract from Revenue for Net Profit. Example: refund_cost,cost_of_goods,total_etsy_fees"),
     use_default_formula: bool = Query(True, description="If True and selected_items is None, use default formula from config"),
@@ -79,6 +79,14 @@ def summary_table(
                         If False and selected_items is not provided, Net Profit = 0.
     """
     try:
+        logger.info(
+            "[P&L] summary-table params start=%s end=%s view_mode=%s selected_items=%s use_default=%s",
+            start_date,
+            end_date,
+            view_mode,
+            selected_items,
+            use_default_formula,
+        )
         selected_list = None
         if selected_items:
             selected_list = [item.strip() for item in selected_items.split(",") if item.strip()]
@@ -90,8 +98,12 @@ def summary_table(
             selected_items=selected_list,
             use_default_formula=use_default_formula
         )
+        try:
+            logger.info("[P&L] summary-table result shape=%s cols=%s", getattr(df, "shape", None), list(df.columns) if hasattr(df, "columns") else None)
+        except Exception:
+            pass
         return {"data": _to_records(df)}
-    except Exception:
-        # If table doesn't exist or other DB error, return empty data
-        # Don't log error to avoid noise when database is empty
+    except Exception as e:
+        # Trước đây swallow error → UI chỉ thấy [] và không biết vì sao.
+        logger.exception("[P&L] summary-table failed: %s", repr(e))
         return {"data": []}

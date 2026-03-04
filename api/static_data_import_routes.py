@@ -301,8 +301,12 @@ def import_product_catalog_row(row: ProductCatalogRow):
 
 @router.post("/bank-transactions/upload")
 async def upload_bank_transactions(file: UploadFile = File(...)):
-    """Upload and import bank transactions CSV file.
+    """Upload and import bank transactions file (CSV hoặc Excel).
     
+    Hỗ trợ các định dạng:
+    - CSV (.csv)
+    - Excel (.xlsx, .xls)
+
     Expected columns:
     - Transaction Date (Ngày GD)
     - Reference No. (Mã giao dịch)
@@ -314,14 +318,54 @@ async def upload_bank_transactions(file: UploadFile = File(...)):
     - Balance (Số dư)
     - Description (Diễn giải)
     """
-    if not file.filename.endswith('.csv'):
-        raise HTTPException(status_code=400, detail="File must be CSV format")
+    filename = (file.filename or "").lower()
+    if not (filename.endswith(".csv") or filename.endswith(".xlsx") or filename.endswith(".xls")):
+        raise HTTPException(status_code=400, detail="File must be CSV or Excel (.xlsx, .xls) format")
     
     try:
         content = await file.read()
-        df = pd.read_csv(io.BytesIO(content), encoding='utf-8')
 
-        # Validate header columns match expected schema (bank_transactions)
+        # Logic giống test_bank_excel.load_bank_file: đọc raw, tìm dòng header (có Description/Diễn giải), lấy header + data.
+        if filename.endswith(".csv"):
+            df_raw = pd.read_csv(io.BytesIO(content), header=None)
+        else:
+            # Hỗ trợ cả .xlsx và .xls
+            # - .xlsx: dùng engine mặc định của pandas (openpyxl)
+            # - .xls: dùng engine="xlrd" (nếu đã cài), nếu lỗi thì trả message gợi ý convert sang .xlsx/.csv
+            if filename.endswith(".xls") and not filename.endswith(".xlsx"):
+                try:
+                    import xlrd  # type: ignore  # ensure engine is available
+                    df_raw = pd.read_excel(io.BytesIO(content), header=None, engine="xlrd")
+                except Exception as e:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Không đọc được file .xls. Vui lòng lưu lại thành .xlsx hoặc CSV. Chi tiết: {e}",
+                    )
+            else:
+                df_raw = pd.read_excel(io.BytesIO(content), header=None)
+
+        header_row_idx = None
+        for i, row in df_raw.iterrows():
+            values = [str(v) for v in row.values if pd.notna(v)]
+            joined = " ".join(values).lower()
+            if "description" in joined or "diễn giải" in joined or "dien giai" in joined:
+                header_row_idx = i
+                break
+
+        if header_row_idx is None:
+            header = df_raw.iloc[0]
+            df = df_raw.iloc[1:].copy()
+            df.columns = header
+        else:
+            header = df_raw.iloc[header_row_idx]
+            df = df_raw.iloc[header_row_idx + 1 :].copy()
+            df.columns = header
+
+        df = df.dropna(how="all")
+        if df.empty:
+            raise HTTPException(status_code=400, detail="Không tìm thấy bảng giao dịch trong file")
+        df.columns = [str(c) if c is not None else "" for c in df.columns]
+
         header_errors = validate_columns("bank_transactions", df.columns.tolist())
         if header_errors:
             expected = get_raw_columns_list("bank_transactions")
@@ -333,56 +377,71 @@ async def upload_bank_transactions(file: UploadFile = File(...)):
                 "expected_columns": expected,
                 "received_columns": list(df.columns),
             }
-        
-        # Map column names (handle both English and Vietnamese)
+
         column_mapping = {}
         for col in df.columns:
             col_lower = col.lower()
-            if 'transaction date' in col_lower or 'ngày gd' in col_lower or 'ngay gd' in col_lower:
-                column_mapping[col] = 'transaction_date'
-            elif 'reference' in col_lower or 'mã giao dịch' in col_lower or 'ma giao dich' in col_lower:
-                column_mapping[col] = 'reference_number'
-            elif 'account number' in col_lower and ('truy vấn' in col_lower or 'truy van' in col_lower):
-                column_mapping[col] = 'account_number'
-            elif 'account name' in col_lower and ('truy vấn' in col_lower or 'truy van' in col_lower):
-                column_mapping[col] = 'account_name'
-            elif 'opening date' in col_lower or 'ngày mở' in col_lower or 'ngay mo' in col_lower:
-                column_mapping[col] = 'opening_date'
-            elif 'credit amount' in col_lower or 'phát sinh có' in col_lower or 'phat sinh co' in col_lower:
-                column_mapping[col] = 'credit_amount'
-            elif 'debit amount' in col_lower or 'phát sinh nợ' in col_lower or 'phat sinh no' in col_lower:
-                column_mapping[col] = 'debit_amount'
-            elif 'balance' in col_lower and 'after' not in col_lower or 'số dư' in col_lower or 'so du' in col_lower:
-                column_mapping[col] = 'balance_after_transaction'
-            elif 'description' in col_lower or 'diễn giải' in col_lower or 'dien giai' in col_lower:
-                column_mapping[col] = 'transaction_description'
-        
+            if "transaction date" in col_lower or "ngày gd" in col_lower or "ngay gd" in col_lower:
+                column_mapping[col] = "transaction_date"
+            elif "reference" in col_lower or "mã giao dịch" in col_lower or "ma giao dich" in col_lower:
+                column_mapping[col] = "reference_number"
+            elif "account number" in col_lower and ("truy vấn" in col_lower or "truy van" in col_lower):
+                column_mapping[col] = "account_number"
+            elif "account name" in col_lower and ("truy vấn" in col_lower or "truy van" in col_lower):
+                column_mapping[col] = "account_name"
+            elif "opening date" in col_lower or "ngày mở" in col_lower or "ngay mo" in col_lower:
+                column_mapping[col] = "opening_date"
+            elif "credit amount" in col_lower or "phát sinh có" in col_lower or "phat sinh co" in col_lower:
+                column_mapping[col] = "credit_amount"
+            elif "debit amount" in col_lower or "phát sinh nợ" in col_lower or "phat sinh no" in col_lower:
+                column_mapping[col] = "debit_amount"
+            elif ("balance" in col_lower and "after" not in col_lower) or "số dư" in col_lower or "so du" in col_lower:
+                column_mapping[col] = "balance_after_transaction"
+            elif "description" in col_lower or "diễn giải" in col_lower or "dien giai" in col_lower:
+                column_mapping[col] = "transaction_description"
         df = df.rename(columns=column_mapping)
-        
-        # Clean and process
-        # Parse description for product info
-        if 'transaction_description' in df.columns:
-            parsed_data = df['transaction_description'].apply(parse_description)
-            parsed_df = pd.DataFrame(parsed_data.tolist())
-            df['pl_account_number'] = parsed_df['pl_account_number']
-            df['parsed_product_line_id'] = parsed_df['parsed_product_line_id']
-            df['parsed_product_id'] = parsed_df['parsed_product_id']
-            df['parsed_variant_id'] = parsed_df['parsed_variant_id']
-        
-        # Convert date formats
-        if 'transaction_date' in df.columns:
-            df['transaction_date'] = pd.to_datetime(df['transaction_date'], errors='coerce', format='%d/%m/%Y')
-            df['transaction_date'] = df['transaction_date'].dt.strftime('%Y-%m-%d')
-        
-        if 'opening_date' in df.columns:
-            df['opening_date'] = pd.to_datetime(df['opening_date'], errors='coerce', format='%d/%m/%Y')
-            df['opening_date'] = df['opening_date'].dt.strftime('%Y-%m-%d')
-        
-        # Convert numeric columns
-        numeric_cols = ['credit_amount', 'debit_amount', 'balance_after_transaction']
-        for col in numeric_cols:
+
+        if "transaction_description" in df.columns:
+            parsed_df = df["transaction_description"].apply(lambda d: pd.Series(parse_description(d)))
+            for col in ["pl_account_number", "parsed_product_line_id", "parsed_product_id", "parsed_variant_id"]:
+                if col in parsed_df.columns:
+                    df[col] = parsed_df[col]
+
+        if "transaction_date" in df.columns:
+            df["transaction_date"] = pd.to_datetime(df["transaction_date"], errors="coerce", dayfirst=True)
+            df["transaction_date"] = df["transaction_date"].dt.strftime("%Y-%m-%d")
+        if "opening_date" in df.columns:
+            df["opening_date"] = pd.to_datetime(df["opening_date"], errors="coerce", dayfirst=True)
+            df["opening_date"] = df["opening_date"].dt.strftime("%Y-%m-%d")
+
+        for col in ["credit_amount", "debit_amount", "balance_after_transaction"]:
             if col in df.columns:
-                df[col] = pd.to_numeric(df[col], errors='coerce')
+                df[col] = (
+                    df[col].astype(str).str.replace(",", "", regex=False).str.replace(" ", "", regex=False)
+                )
+                df[col] = pd.to_numeric(df[col], errors="coerce")
+
+        # DEBUG: in ra một số dòng sau khi đã parse description & chuyển số,
+        # để kiểm tra PL account và số tiền có khớp với description hay không.
+        try:
+            debug_cols = [
+                'transaction_date',
+                'reference_number',
+                'account_number',
+                'transaction_description',
+                'pl_account_number',
+                'debit_amount',
+                'credit_amount',
+                'balance_after_transaction',
+            ]
+            existing_debug_cols = [c for c in debug_cols if c in df.columns]
+            if existing_debug_cols:
+                print("\n=== BANK UPLOAD DEBUG (first 20 rows) ===")
+                import pandas as _pd  # local import để tránh xung đột tên
+                with _pd.option_context("display.max_columns", None, "display.width", 200):
+                    print(df[existing_debug_cols].head(20).to_string(index=False))
+        except Exception as _dbg_e:
+            print("BANK UPLOAD DEBUG failed:", repr(_dbg_e))
         
         # ==========================
         # FAST PATH: batch upsert + batch insert (1 DB connection)

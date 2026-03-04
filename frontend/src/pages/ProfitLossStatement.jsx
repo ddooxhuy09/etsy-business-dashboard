@@ -83,6 +83,7 @@ export default function ProfitLossStatement() {
   const [startDate, setStartDate] = useState(null);
   const [endDate, setEndDate] = useState(null);
   const [viewMode, setViewMode] = useState('month');
+  const [selectedYear, setSelectedYear] = useState(null);
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(false);
   const [expanded, setExpanded] = useState({ etsy: false, vat: false, cogs: false });
@@ -90,21 +91,46 @@ export default function ProfitLossStatement() {
 
   const toggle = (key) => setExpanded((s) => ({ ...s, [key]: !s[key] }));
 
-  const filters = useMemo(
-    () => ({
-      start_date: startDate?.format?.('YYYY-MM-DD') || null,
-      end_date: endDate?.format?.('YYYY-MM-DD') || null,
+  const filters = useMemo(() => {
+    // Mặc định lấy theo DatePicker (nếu user chọn tay)
+    let start = startDate?.format?.('YYYY-MM-DD') || null;
+    let end = endDate?.format?.('YYYY-MM-DD') || null;
+
+    // Nếu đang xem theo month và chọn Year, ưu tiên full năm đó
+    if (viewMode === 'month' && selectedYear) {
+      const yearInt = parseInt(selectedYear, 10);
+      if (!Number.isNaN(yearInt)) {
+        start = `${yearInt}-01-01`;
+        end = `${yearInt}-12-31`;
+      }
+    }
+
+    return {
+      start_date: start,
+      end_date: end,
       view_mode: viewMode,
       selected_items: selectedExpenseItems.length > 0 ? selectedExpenseItems.join(',') : null,
       use_default_formula: false, // Sử dụng selected_items từ UI
-    }),
-    [startDate, endDate, viewMode, selectedExpenseItems]
-  );
+    };
+  }, [startDate, endDate, viewMode, selectedYear, selectedExpenseItems]);
 
   useEffect(() => {
     setLoading(true);
+    // Debug: xem filters thực sự gửi lên backend
+    // eslint-disable-next-line no-console
+    console.log('[P&L] request filters', filters);
     fetchProfitLossSummaryTable(filters)
-      .then((r) => setData(r?.data || []))
+      .then((r) => {
+        const rows = r?.data || [];
+        setData(rows);
+        // Debug: xem response length và một vài keys
+        // eslint-disable-next-line no-console
+        console.log('[P&L] response', { rows: rows.length, sample: rows[0], filters });
+        if (rows.length === 0) {
+          // eslint-disable-next-line no-console
+          console.warn('[P&L] EMPTY DATA', { filters, response: r });
+        }
+      })
       .catch(() => message.error('Failed to load Profit & Loss table'))
       .finally(() => setLoading(false));
   }, [filters.start_date, filters.end_date, filters.view_mode, filters.selected_items]);
@@ -191,7 +217,13 @@ export default function ProfitLossStatement() {
             key: k,
             align: 'right',
             width: 120,
-            render: (v) => fmt(v),
+            render: (v, record) => {
+              // Dòng Profit: hiển thị trị tuyệt đối (xóa dấu trừ cho dễ đọc)
+              if (record['Line Item'] === 'Profit' && typeof v === 'number') {
+                return fmt(Math.abs(v));
+              }
+              return fmt(v);
+            },
           };
         }),
     ];
@@ -219,6 +251,26 @@ export default function ProfitLossStatement() {
             options={viewModes}
             style={{ width: 140 }}
           />
+          {viewMode === 'month' && (
+            <Select
+              placeholder="Select Year"
+              allowClear
+              style={{ width: 120 }}
+              value={selectedYear}
+              onChange={setSelectedYear}
+              options={[
+                { value: '2024', label: '2024' },
+                { value: '2025', label: '2025' },
+                { value: '2026', label: '2026' },
+              ]}
+            />
+          )}
+        </div>
+        <div style={{ marginTop: 8, color: '#888', fontSize: 12 }}>
+          Debug range: <span style={{ fontFamily: 'monospace' }}>{filters.start_date || 'null'}</span>
+          {' '}→{' '}
+          <span style={{ fontFamily: 'monospace' }}>{filters.end_date || 'null'}</span>
+          {viewMode === 'month' && selectedYear ? ` (Year=${selectedYear})` : ''}
         </div>
         
         <div style={{ marginTop: 16 }}>

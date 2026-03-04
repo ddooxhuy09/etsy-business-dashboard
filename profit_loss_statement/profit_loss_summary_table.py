@@ -25,20 +25,48 @@ def get_profit_loss_summary_table(start_date: str = None, end_date: str = None, 
     if end_date:
         date_filter += f" AND dt.full_date <= '{end_date}'"
 
-    # Select keys based on view_mode
+    # Select keys based on view_mode (alias fields to stable column names for merges)
     if view_mode == 'year':
-        key_select = "dt.year"
-        key_group_order = "GROUP BY dt.year ORDER BY dt.year"
+        key_select = "dt.year as year"
+        key_group = "dt.year"
+        key_order = "year"
+        merge_cols = ["year"]
     elif view_mode == 'month_year':
         # For month/year view: group by year and month
-        key_select = "dt.year, dt.month, dt.month_name"
-        key_group_order = "GROUP BY dt.year, dt.month, dt.month_name ORDER BY dt.year, dt.month"
+        key_select = "dt.year as year, dt.month as month, dt.month_name as month_name"
+        key_group = "dt.year, dt.month, dt.month_name"
+        key_order = "year, month"
+        merge_cols = ["year", "month", "month_name"]
     else:
         # For month view: group by month only (aggregate across all years)
-        key_select = "dt.month, dt.month_name"
-        key_group_order = "GROUP BY dt.month, dt.month_name ORDER BY dt.month"
+        key_select = "dt.month as month, dt.month_name as month_name"
+        key_group = "dt.month, dt.month_name"
+        key_order = "month"
+        merge_cols = ["month", "month_name"]
 
     # Get data with all components
+    # Period scaffold: include any period that appears in EITHER Etsy financial transactions OR bank transactions.
+    # This prevents COGS from showing 0 just because revenue table has no rows for that period.
+    periods_sql = f"""
+    SELECT DISTINCT {", ".join(merge_cols)}
+    FROM (
+        SELECT {key_select}
+        FROM fact_financial_transactions fft
+        JOIN dim_time dt ON fft.transaction_date_key = dt.time_key
+        WHERE 1=1 {date_filter}
+        UNION
+        SELECT {key_select}
+        FROM fact_bank_transactions fbt
+        JOIN dim_time dt ON fbt.transaction_date_key = dt.time_key
+        WHERE 1=1 {date_filter}
+    ) p
+    ORDER BY {key_order}
+    """
+
+    periods = execute_query(periods_sql, None)
+    if periods is None or periods.empty:
+        return pd.DataFrame({"Line Item": []})
+
     monthly_pl_sql = f"""
     SELECT
         {key_select},
@@ -153,16 +181,35 @@ def get_profit_loss_summary_table(start_date: str = None, end_date: str = None, 
     FROM fact_financial_transactions fft
     JOIN dim_time dt ON fft.transaction_date_key = dt.time_key
     WHERE 1=1 {date_filter}
-    {key_group_order}
+    GROUP BY {key_group}
+    ORDER BY {key_order}
     """
 
-    monthly_data = execute_query(monthly_pl_sql, None)
+    revenue_data = execute_query(monthly_pl_sql, None)
+    if revenue_data is None:
+        revenue_data = pd.DataFrame(columns=merge_cols)
 
-    if monthly_data is None or monthly_data.empty:
-        # Return empty structure if no data
-        return pd.DataFrame({
-            'Line Item': [],
-        })
+    # Base table = periods; left-join revenue (so months with only bank costs still appear)
+    monthly_data = periods.merge(revenue_data, on=merge_cols, how="left")
+    for col in [
+        "revenue",
+        "refund_cost",
+        "transaction_fee",
+        "processing_fee",
+        "regulatory_fee",
+        "listing_fee",
+        "marketing_fee",
+        "vat_auto_renew_sold",
+        "vat_shipping_transaction",
+        "vat_processing_fee",
+        "vat_transaction_credit",
+        "vat_listing_credit",
+        "vat_listing",
+        "vat_etsy_plus_subscription",
+    ]:
+        if col not in monthly_data.columns:
+            monthly_data[col] = 0
+    monthly_data = monthly_data.fillna(0)
 
     # Calculate derived fields
     monthly_data['total_vat_fees'] = (monthly_data['vat_auto_renew_sold'] +
@@ -185,73 +232,75 @@ def get_profit_loss_summary_table(start_date: str = None, end_date: str = None, 
     SELECT
         {key_select},
         COALESCE(SUM(CASE
-            WHEN fbt.pl_account_number = '6211' THEN fbt.debit_amount
+            WHEN fbt.pl_account_number = '6211' THEN ABS(fbt.debit_amount)
             ELSE 0
         END), 0) as material_cost,
         COALESCE(SUM(CASE
-            WHEN fbt.pl_account_number = '6221' THEN fbt.debit_amount
+            WHEN fbt.pl_account_number = '6221' THEN ABS(fbt.debit_amount)
             ELSE 0
         END), 0) as concept_design_cost,
         COALESCE(SUM(CASE
-            WHEN fbt.pl_account_number = '6222' THEN fbt.debit_amount
+            WHEN fbt.pl_account_number = '6222' THEN ABS(fbt.debit_amount)
             ELSE 0
         END), 0) as chart_hook_spin_cost,
         COALESCE(SUM(CASE
-            WHEN fbt.pl_account_number = '6223' THEN fbt.debit_amount
+            WHEN fbt.pl_account_number = '6223' THEN ABS(fbt.debit_amount)
             ELSE 0
         END), 0) as spinning_cost,
         COALESCE(SUM(CASE
-            WHEN fbt.pl_account_number = '6224' THEN fbt.debit_amount
+            WHEN fbt.pl_account_number = '6224' THEN ABS(fbt.debit_amount)
             ELSE 0
         END), 0) as photo_spin_cost,
         COALESCE(SUM(CASE
-            WHEN fbt.pl_account_number = '6225' THEN fbt.debit_amount
+            WHEN fbt.pl_account_number = '6225' THEN ABS(fbt.debit_amount)
             ELSE 0
         END), 0) as pattern_translation_cost,
-        COALESCE(SUM(fbt.debit_amount), 0) as cost_of_goods
+        COALESCE(SUM(ABS(fbt.debit_amount)), 0) as cost_of_goods
     FROM fact_bank_transactions fbt
     JOIN dim_time dt ON fbt.transaction_date_key = dt.time_key
     WHERE 1=1 {date_filter}
     AND fbt.pl_account_number IN ('6211', '6221', '6222', '6223', '6224', '6225')
-    {key_group_order}
+    GROUP BY {key_group}
+    ORDER BY {key_order}
     """
 
     additional_costs_sql = f"""
     SELECT
         {key_select},
         COALESCE(SUM(CASE
-            WHEN fbt.pl_account_number = '6273' THEN fbt.debit_amount
+            WHEN fbt.pl_account_number = '6273' THEN ABS(fbt.debit_amount)
             ELSE 0
         END), 0) as general_production_cost,
         COALESCE(SUM(CASE
-            WHEN fbt.pl_account_number = '6411' THEN fbt.debit_amount
+            WHEN fbt.pl_account_number = '6411' THEN ABS(fbt.debit_amount)
             ELSE 0
         END), 0) as staff_cost,
         COALESCE(SUM(CASE
-            WHEN fbt.pl_account_number = '6412' THEN fbt.debit_amount
+            WHEN fbt.pl_account_number = '6412' THEN ABS(fbt.debit_amount)
             ELSE 0
         END), 0) as material_packaging_cost,
         COALESCE(SUM(CASE
-            WHEN fbt.pl_account_number = '6413' THEN fbt.debit_amount
+            WHEN fbt.pl_account_number = '6413' THEN ABS(fbt.debit_amount)
             ELSE 0
         END), 0) as platform_tool_cost,
         COALESCE(SUM(CASE
-            WHEN fbt.pl_account_number = '6414' THEN fbt.debit_amount
+            WHEN fbt.pl_account_number = '6414' THEN ABS(fbt.debit_amount)
             ELSE 0
         END), 0) as tool_cost,
         COALESCE(SUM(CASE
-            WHEN fbt.pl_account_number = '6421' THEN fbt.debit_amount
+            WHEN fbt.pl_account_number = '6421' THEN ABS(fbt.debit_amount)
             ELSE 0
         END), 0) as management_staff_cost,
         COALESCE(SUM(CASE
-            WHEN fbt.pl_account_number = '6428' THEN fbt.debit_amount
+            WHEN fbt.pl_account_number = '6428' THEN ABS(fbt.debit_amount)
             ELSE 0
         END), 0) as marketing_staff_cost
     FROM fact_bank_transactions fbt
     JOIN dim_time dt ON fbt.transaction_date_key = dt.time_key
     WHERE 1=1 {date_filter}
     AND fbt.pl_account_number IN ('6273', '6411', '6412', '6413', '6414', '6421', '6428')
-    {key_group_order}
+    GROUP BY {key_group}
+    ORDER BY {key_order}
     """
 
     cogs_data = execute_query(cogs_sql, None)
@@ -259,13 +308,6 @@ def get_profit_loss_summary_table(start_date: str = None, end_date: str = None, 
 
     # Merge cost of goods data with main data
     if cogs_data is not None and not cogs_data.empty:
-        if view_mode == 'year':
-            merge_cols = ['year']
-        elif view_mode == 'month_year':
-            merge_cols = ['year', 'month', 'month_name']
-        else:
-            merge_cols = ['month', 'month_name']
-
         monthly_data = monthly_data.merge(cogs_data, on=merge_cols, how='left')
         monthly_data['cost_of_goods'] = monthly_data['cost_of_goods'].fillna(0)
         monthly_data['material_cost'] = monthly_data['material_cost'].fillna(0)
@@ -285,13 +327,6 @@ def get_profit_loss_summary_table(start_date: str = None, end_date: str = None, 
 
     # Merge additional costs data with main data
     if additional_costs_data is not None and not additional_costs_data.empty:
-        if view_mode == 'year':
-            merge_cols = ['year']
-        elif view_mode == 'month_year':
-            merge_cols = ['year', 'month', 'month_name']
-        else:
-            merge_cols = ['month', 'month_name']
-
         monthly_data = monthly_data.merge(additional_costs_data, on=merge_cols, how='left')
         monthly_data['general_production_cost'] = monthly_data['general_production_cost'].fillna(0)
         monthly_data['staff_cost'] = monthly_data['staff_cost'].fillna(0)

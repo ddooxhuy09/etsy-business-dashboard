@@ -43,6 +43,16 @@ data/processed/
 data/warehouse/
 datatest/
 
+# Bank statement exports (avoid committing)
+SaoKeDienTu_*.csv
+SaoKeDienTu_*.table.csv
+SaoKeDienTu_*.xlsx
+SaoKeDienTu_*.xls
+
+# Local one-off debug scripts (keep out of repo)
+test_bank_excel.py
+test_read_bank_csv.py
+
 # Environment variables
 .env
 .env.local
