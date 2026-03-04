@@ -5,7 +5,7 @@ Summary table uses utils.db_query -> api.db.run_query.
 import math
 import logging
 import pandas as pd
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, HTTPException
 
 from profit_loss_statement.profit_loss_summary_table import get_profit_loss_summary_table
 from profit_loss_statement.profit_formula_config import (
@@ -14,6 +14,7 @@ from profit_loss_statement.profit_formula_config import (
     EXPENSE_ITEM_LABELS,
     PL_ACCOUNT_MAPPING,
 )
+from utils.db_query import execute_query
 
 router = APIRouter(prefix="/api/profit-loss", tags=["profit-loss"])
 logger = logging.getLogger(__name__)
@@ -107,3 +108,46 @@ def summary_table(
         # Trước đây swallow error → UI chỉ thấy [] và không biết vì sao.
         logger.exception("[P&L] summary-table failed: %s", repr(e))
         return {"data": []}
+
+
+@router.delete("/clean-bank-by-pl")
+def clean_bank_by_pl(
+    start_date: str = Query(..., description="YYYY-MM-DD"),
+    end_date: str = Query(..., description="YYYY-MM-DD"),
+    pl_accounts: str = Query(..., description="Comma-separated PL account numbers, e.g. 6222,6211"),
+    account_number: str = Query(None, description="Optional bank account_number to restrict delete"),
+):
+    """
+    Hard delete các dòng fact_bank_transactions theo PL account + khoảng ngày.
+    Dùng cẩn thận, không thể undo.
+    """
+    accounts = [a.strip() for a in pl_accounts.split(",") if a.strip()]
+    if not accounts:
+        raise HTTPException(status_code=400, detail="No PL accounts provided")
+
+    logger.warning(
+        "[P&L] clean-bank-by-pl start=%s end=%s pl_accounts=%s account_number=%s",
+        start_date,
+        end_date,
+        accounts,
+        account_number,
+    )
+
+    sql = """
+    DELETE FROM fact_bank_transactions AS fbt
+    USING dim_time dt
+    WHERE fbt.transaction_date_key = dt.time_key
+      AND dt.full_date BETWEEN %s AND %s
+      AND fbt.pl_account_number = ANY(%s)
+    """
+    params = [start_date, end_date, accounts]
+    if account_number:
+        sql += " AND fbt.account_number = %s"
+        params.append(account_number)
+
+    try:
+        execute_query(sql, tuple(params))
+        return {"ok": True, "deleted_pl_accounts": accounts}
+    except Exception as e:
+        logger.exception("[P&L] clean-bank-by-pl failed: %s", repr(e))
+        raise HTTPException(status_code=500, detail="Failed to delete bank transactions")

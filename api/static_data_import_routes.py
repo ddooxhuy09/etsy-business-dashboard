@@ -648,20 +648,31 @@ async def upload_bank_transactions(file: UploadFile = File(...)):
                     )
 
                 if insert_rows:
-                    execute_values(
-                        cur,
-                        """
-                        INSERT INTO fact_bank_transactions (
-                            bank_account_key, transaction_date_key, product_catalog_key,
-                            reference_number, account_number, transaction_description,
-                            pl_account_number, parsed_product_line_id, parsed_product_id, parsed_variant_id,
-                            credit_amount, debit_amount, balance_after_transaction,
-                            is_business_related, data_source
-                        ) VALUES %s
-                        """,
-                        insert_rows,
-                        page_size=2000,
-                    )
+                    try:
+                        execute_values(
+                            cur,
+                            """
+                            INSERT INTO fact_bank_transactions (
+                                bank_account_key, transaction_date_key, product_catalog_key,
+                                reference_number, account_number, transaction_description,
+                                pl_account_number, parsed_product_line_id, parsed_product_id, parsed_variant_id,
+                                credit_amount, debit_amount, balance_after_transaction,
+                                is_business_related, data_source
+                            ) VALUES %s
+                            """,
+                            insert_rows,
+                            page_size=2000,
+                        )
+                    except Exception as db_err:
+                        # Nếu có unique constraint (ví dụ trên (account_number, reference_number)),
+                        # báo lỗi rõ ràng để user biết là file đã import rồi.
+                        from psycopg2.errors import UniqueViolation  # type: ignore
+                        if isinstance(db_err, UniqueViolation) or "duplicate key value violates unique constraint" in str(db_err):
+                            raise HTTPException(
+                                status_code=400,
+                                detail="Duplicate bank transactions detected (same account_number + reference_number). Có thể file sao kê này đã được import trước đó."
+                            )
+                        raise
                     imported = len(insert_rows)
                 conn.commit()
         

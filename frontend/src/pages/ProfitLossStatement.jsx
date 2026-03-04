@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Card, Table, Select, DatePicker, Spin, message } from 'antd';
+import { Card, Table, Select, DatePicker, Spin, message, Modal } from 'antd';
 import { DownOutlined, RightOutlined } from '@ant-design/icons';
+import api from '../lib/axios';
 import { fetchProfitLossSummaryTable } from '../api/profitLoss';
 import TableColumnTitle from '../components/TableColumnTitle';
 import { PROFIT_LOSS_COLUMN_ANNOTATIONS } from '../constants/tableColumnAnnotations';
@@ -65,6 +66,24 @@ const COGS_CHILDREN = [
   '  - Chi phí chụp + quay (Chi phí nhân công trực tiếp)',
   '  - Chi phí viết pattern - dịch chart (Chi phí nhân công trực tiếp)',
 ];
+
+// Mapping từ Line Item → danh sách PL account numbers sẽ bị xóa khi click
+const LINE_ITEM_PL_ACCOUNTS = {
+  'Cost of Goods': ['6211', '6221', '6222', '6223', '6224', '6225'],
+  '  - Chi phí len (Chi phí nguyên liệu, vật liệu trực tiếp)': ['6211'],
+  '  - Chi phí làm concept design (Chi phí nhân công trực tiếp)': ['6221'],
+  '  - Chi phí làm chart + móc + quay (optional) (Chi phí nhân công trực tiếp)': ['6222'],
+  '  - Chi phí quay (Chi phí nhân công trực tiếp)': ['6223'],
+  '  - Chi phí chụp + quay (Chi phí nhân công trực tiếp)': ['6224'],
+  '  - Chi phí viết pattern - dịch chart (Chi phí nhân công trực tiếp)': ['6225'],
+  'Chi phí sản xuất chung': ['6273'],
+  'Chi phí nhân viên (Chi phí bán hàng)': ['6411'],
+  'Chi phí nguyên vật liệu, bao bì (Chi phí bán hàng)': ['6412'],
+  'Chi phí dụng cụ tool sàn (Chi phí bán hàng)': ['6413'],
+  'Chi phí dụng cụ tool (Chi phí bán hàng)': ['6414'],
+  'Chi phí nhân viên quản lý (Chi phí quản lý doanh nghiệp)': ['6421'],
+  'Chi phí nhân viên marketing - đăng và quản lí kênh (Chi phí quản lý doanh nghiệp)': ['6428'],
+};
 
 function fmt(v) {
   if (v == null || (typeof v === 'number' && isNaN(v))) return '—';
@@ -141,6 +160,56 @@ export default function ProfitLossStatement() {
       .filter((r) => !isChildHidden(r['Line Item'], expanded))
       .map((r, i) => ({ ...r, key: `pl-${i}` }));
   }, [data, expanded]);
+
+  const handleRowClick = (record) => {
+    const line = record['Line Item'];
+    const pls = LINE_ITEM_PL_ACCOUNTS[line];
+    if (!pls || !filters.start_date || !filters.end_date) return;
+
+    Modal.confirm({
+      title: 'Xóa dữ liệu ngân hàng?',
+      content: (
+        <div>
+          <p>
+            Dòng: <strong>{line}</strong>
+          </p>
+          <p>
+            Sẽ xóa tất cả giao dịch ngân hàng có PL account{' '}
+            <strong>{pls.join(', ')}</strong> trong khoảng{' '}
+            <code>{filters.start_date}</code> → <code>{filters.end_date}</code>.
+          </p>
+          <p style={{ color: '#d4380d' }}>
+            Hành động này <strong>không thể hoàn tác</strong>. Bạn chắc chắn chứ?
+          </p>
+        </div>
+      ),
+      okText: 'Delete',
+      okType: 'danger',
+      cancelText: 'Cancel',
+      onOk: async () => {
+        try {
+          setLoading(true);
+          await api.delete('/api/profit-loss/clean-bank-by-pl', {
+            params: {
+              start_date: filters.start_date,
+              end_date: filters.end_date,
+              pl_accounts: pls.join(','),
+            },
+          });
+          message.success('Đã xóa dữ liệu bank, đang reload bảng');
+          const r = await fetchProfitLossSummaryTable(filters);
+          const rows = r?.data || [];
+          setData(rows);
+        } catch (e) {
+          // eslint-disable-next-line no-console
+          console.error('Delete bank by PL failed', e);
+          message.error('Xóa dữ liệu bank thất bại');
+        } finally {
+          setLoading(false);
+        }
+      },
+    });
+  };
 
   const columns = useMemo(() => {
     if (!data.length) return [{ title: 'Line Item', dataIndex: 'Line Item', key: 'Line Item', width: 400 }];
@@ -303,6 +372,9 @@ export default function ProfitLossStatement() {
               scroll={{ x: 'max-content' }}
               size="small"
               rowClassName={getRowClassName}
+              onRow={(record) => ({
+                onClick: () => handleRowClick(record),
+              })}
             />
           </div>
         </Spin>

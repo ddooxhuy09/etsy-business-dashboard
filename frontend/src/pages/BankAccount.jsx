@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Card, Upload, Button, message, Space, Typography, Alert, Table, Input, Spin, Select, Modal, Form, InputNumber, DatePicker } from 'antd';
 import { UploadOutlined, BankOutlined, CheckCircleOutlined, SearchOutlined, ClearOutlined, PlusOutlined, ReloadOutlined } from '@ant-design/icons';
-import { fetchBankTransactions, fetchBankTransactionsCount, uploadBankTransactions, importBankTransactionRow } from '../api/staticDataApi';
+import { fetchBankTransactions, fetchBankTransactionsCount, uploadBankTransactions, importBankTransactionRow, deleteBankTransactions } from '../api/staticDataApi';
 import dayjs from 'dayjs';
 
 const { Title, Text } = Typography;
@@ -20,6 +20,7 @@ export default function BankAccount() {
   const [accountNumber, setAccountNumber] = useState(null);
   const [importModalVisible, setImportModalVisible] = useState(false);
   const [importing, setImporting] = useState(false);
+  const [selectedRowKeys, setSelectedRowKeys] = useState([]);
   const [form] = Form.useForm();
 
   useEffect(() => {
@@ -83,18 +84,26 @@ export default function BankAccount() {
       }
     } catch (error) {
       const detail = error?.response?.data?.detail || error.message;
-      const fullMessage = 'Upload thất bại: ' + detail;
-      message.error(fullMessage);
-      // Hiển thị full chi tiết lỗi trong modal (không bị 3 chấm ở giữa do UI)
-      Modal.error({
-        title: 'Upload thất bại',
-        content: (
-          <pre style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', maxHeight: 400, overflow: 'auto' }}>
-            {fullMessage}
-          </pre>
-        ),
-        width: 800,
-      });
+      const isDuplicate =
+        typeof detail === 'string' &&
+        detail.includes('Duplicate bank transactions detected');
+      if (isDuplicate) {
+        // Thông báo gọn theo yêu cầu
+        message.error('Upload thất bại: duplicate. Có thể file sao kê này đã được import trước đó.');
+      } else {
+        const fullMessage = 'Upload thất bại: ' + detail;
+        message.error(fullMessage);
+        // Hiển thị full chi tiết lỗi trong modal (không bị 3 chấm ở giữa do UI)
+        Modal.error({
+          title: 'Upload thất bại',
+          content: (
+            <pre style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', maxHeight: 400, overflow: 'auto' }}>
+              {fullMessage}
+            </pre>
+          ),
+          width: 800,
+        });
+      }
     } finally {
       setUploading(false);
     }
@@ -294,6 +303,38 @@ export default function BankAccount() {
     }));
   }, [sortColumn, sortOrder]);
 
+  const rowSelection = {
+    selectedRowKeys,
+    onChange: (keys) => setSelectedRowKeys(keys),
+  };
+
+  const handleDeleteSelected = () => {
+    if (!selectedRowKeys.length) return;
+    Modal.confirm({
+      title: 'Xóa giao dịch ngân hàng đã chọn?',
+      content: `Bạn sắp xóa ${selectedRowKeys.length.toLocaleString()} dòng khỏi bảng fact_bank_transactions. Hành động này không thể hoàn tác.`,
+      okText: 'Delete',
+      okType: 'danger',
+      cancelText: 'Cancel',
+      onOk: async () => {
+        try {
+          setLoading(true);
+          await deleteBankTransactions(selectedRowKeys);
+          message.success(`Đã xóa ${selectedRowKeys.length.toLocaleString()} giao dịch.`);
+          setSelectedRowKeys([]);
+          loadCount();
+          loadData();
+        } catch (e) {
+          // eslint-disable-next-line no-console
+          console.error('Delete bank transactions failed', e);
+          message.error('Xóa giao dịch thất bại');
+        } finally {
+          setLoading(false);
+        }
+      },
+    });
+  };
+
   return (
     <div style={{ padding: '0 8px' }}>
       <style>{`
@@ -394,6 +435,14 @@ export default function BankAccount() {
             <Space>
               <Button
                 size="small"
+                danger
+                disabled={!selectedRowKeys.length}
+                onClick={handleDeleteSelected}
+              >
+                Xóa giao dịch đã chọn
+              </Button>
+              <Button
+                size="small"
                 icon={<ReloadOutlined />}
                 onClick={() => {
                   loadCount();
@@ -421,6 +470,7 @@ export default function BankAccount() {
               columns={columns}
               dataSource={data.data}
               rowKey="bank_transaction_key"
+              rowSelection={rowSelection}
               size="small"
               className="bank-table-small"
               scroll={{ x: 1200 }}

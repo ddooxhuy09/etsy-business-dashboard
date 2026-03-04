@@ -4,9 +4,9 @@ These are not monthly data, but shared across all periods.
 """
 import math
 import pandas as pd
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, Body, HTTPException
 
-from api.db import run_query
+from api.db import run_query, execute_query
 
 router = APIRouter(prefix="/api/static", tags=["static"])
 
@@ -227,3 +227,20 @@ def get_bank_transactions_count(account_number: str = Query(None)):
         df = run_query("SELECT COUNT(*) as total FROM fact_bank_transactions")
     total = int(df["total"].iloc[0]) if not df.empty else 0
     return {"total": total}
+
+
+@router.delete("/bank-transactions")
+def delete_bank_transactions(ids: list[int] = Body(..., embed=True)):
+    """
+    Delete bank transactions by primary keys (bank_transaction_key).
+    Dùng khi user chọn dòng cụ thể trên UI để xóa.
+    """
+    if not ids:
+        raise HTTPException(status_code=400, detail="No ids provided")
+    # Ensure all ids are ints
+    ids = [int(i) for i in ids]
+    execute_query(
+        "DELETE FROM fact_bank_transactions WHERE bank_transaction_key = ANY(%s)",
+        (ids,),
+    )
+    return {"ok": True, "deleted": len(ids)}
