@@ -144,13 +144,23 @@ def _get_product_catalog_key(product_line_id: str, product_id: str, variant_id: 
 
 @router.post("/product-catalog/upload")
 async def upload_product_catalog(file: UploadFile = File(...)):
-    """Upload and import product_catalog.csv file."""
-    if not file.filename.endswith('.csv'):
-        raise HTTPException(status_code=400, detail="File must be CSV format")
+    """Upload and import product_catalog (.csv, .xlsx, .xls) file."""
+    fname = file.filename.lower() if file.filename else ""
+    allowed_exts = (".csv", ".xlsx", ".xls")
+    if not any(fname.endswith(ext) for ext in allowed_exts):
+        raise HTTPException(status_code=400, detail="File phải là CSV hoặc Excel (.csv, .xlsx, .xls)")
     
     try:
         content = await file.read()
-        df = pd.read_csv(io.BytesIO(content), encoding='utf-8')
+
+        # Đọc file tuỳ theo định dạng
+        if fname.endswith(".csv"):
+            try:
+                df = pd.read_csv(io.BytesIO(content), encoding='utf-8')
+            except UnicodeDecodeError:
+                df = pd.read_csv(io.BytesIO(content), encoding='utf-8-sig')
+        else:
+            df = pd.read_excel(io.BytesIO(content))
 
         # Validate header columns match expected schema
         header_errors = validate_columns("product_catalog", df.columns.tolist())
@@ -158,19 +168,43 @@ async def upload_product_catalog(file: UploadFile = File(...)):
             expected = get_raw_columns_list("product_catalog")
             return {
                 "ok": False,
-                "message": "Sai định dạng cột product_catalog.csv",
+                "message": "Sai định dạng cột file product catalog",
                 "imported": 0,
                 "errors": header_errors,
                 "expected_columns": expected,
                 "received_columns": list(df.columns),
             }
         
-        # Clean data
+        # ── Phát hiện duplicate trong file TRƯỚC khi clean ──────────────────
+        # Cần detect trên raw df vì cleaner đã tự drop_duplicates bên trong.
+        # Chỉ cần normalize tên 3 cột key (strip + lower) để xác định chúng.
+        KEY_COLS = ["product_line_id", "product_id", "variant_id"]
+        _key_norm_map = {"product line id": "product_line_id",
+                         "product id": "product_id",
+                         "variant id": "variant_id"}
+        _raw_rename = {c: _key_norm_map[c.strip().lower()]
+                       for c in df.columns if c.strip().lower() in _key_norm_map}
+        df_raw_keys = df.rename(columns=_raw_rename)
+        dup_rows = []
+        if all(c in df_raw_keys.columns for c in KEY_COLS):
+            _keys = df_raw_keys[KEY_COLS].astype(str).apply(lambda s: s.str.strip())
+            _dup_mask = _keys.duplicated(keep=False)
+            if _dup_mask.any():
+                _df_dup = df_raw_keys[_dup_mask].copy()
+                for _, grp in _df_dup.groupby(KEY_COLS):
+                    k = grp.iloc[0]
+                    dup_rows.append(
+                        f"{k['product_line_id']} / {k['product_id']} / {k['variant_id']} "
+                        f"({len(grp)} lần)"
+                    )
+        # ─────────────────────────────────────────────────────────────────────
+
+        # Clean data (bên trong đã drop_duplicates)
         df_clean = clean_product_catalog_data(df)
-        
+
         if df_clean.empty:
             return {"ok": False, "message": "No valid data after cleaning", "imported": 0}
-        
+
         # ==========================
         # FAST PATH: batch upsert (giống bank-transactions, 1 DB connection)
         # - Không insert từng dòng (rất chậm)
@@ -179,23 +213,12 @@ async def upload_product_catalog(file: UploadFile = File(...)):
         import psycopg2
         from psycopg2.extras import execute_values
 
-        # Chỉ giữ các cột cần thiết
         cols = ["product_line_id", "product_id", "variant_id", "product_line_name", "product_name", "variant_name"]
         for c in cols:
             if c not in df_clean.columns:
                 df_clean[c] = None
 
-        # Chuẩn hóa text: strip khoảng trắng
-        for c in ["product_line_id", "product_id", "variant_id"]:
-            df_clean[c] = df_clean[c].astype(str).str.strip()
-
-        # Bỏ các dòng thiếu key chính
-        df_clean = df_clean.dropna(subset=["product_line_id", "product_id", "variant_id"])
-        if df_clean.empty:
-            return {"ok": False, "message": "No valid key rows after cleaning", "imported": 0}
-
-        # Loại bỏ trùng lặp để tránh upsert lặp
-        df_upsert = df_clean[cols].drop_duplicates(subset=["product_line_id", "product_id", "variant_id"]).copy()
+        df_upsert = df_clean[cols].copy()
 
         dsn = get_database_url().replace("postgresql+psycopg2://", "postgresql://")
         imported = 0
@@ -227,7 +250,9 @@ async def upload_product_catalog(file: UploadFile = File(...)):
                         rows,
                         page_size=2000,
                     )
-                    imported = len(rows)
+                    # rowcount = số dòng thực sự INSERT (DO NOTHING rows không được đếm)
+                    inserted = cur.rowcount if cur.rowcount >= 0 else len(rows)
+                    skipped = len(rows) - inserted
                 conn.commit()
         except Exception:
             # Cho log chi tiết rồi bắn HTTPException phía dưới
@@ -235,8 +260,11 @@ async def upload_product_catalog(file: UploadFile = File(...)):
 
         return {
             "ok": True,
-            "message": f"Imported or updated {imported} rows",
-            "imported": imported,
+            "message": f"Inserted {inserted} rows mới, {skipped} rows đã tồn tại (skipped)",
+            "imported": inserted,
+            "skipped": skipped,
+            "total_in_file": len(rows),
+            "duplicates_in_file": dup_rows,
             "errors": [],
         }
     except Exception as e:

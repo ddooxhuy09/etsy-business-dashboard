@@ -67,7 +67,26 @@ export default function ProductCatalog() {
     try {
       const result = await uploadProductCatalog(file);
       if (result.ok) {
-        message.success(`Đã import ${result.imported} dòng từ file ${file.name}`);
+        if (result.imported > 0) {
+          message.success(`Đã thêm mới ${result.imported} dòng từ file ${file.name}` +
+            (result.skipped > 0 ? ` (${result.skipped} dòng đã tồn tại, bỏ qua)` : ''));
+        } else {
+          message.info(`Không có dòng nào mới — tất cả ${result.skipped} dòng đã tồn tại trong database.`);
+        }
+        if (result.duplicates_in_file && result.duplicates_in_file.length > 0) {
+          const dupList = result.duplicates_in_file.join('\n');
+          message.warning({
+            content: (
+              <div>
+                <div style={{ fontWeight: 600, marginBottom: 4 }}>
+                  {result.duplicates_in_file.length} tổ hợp bị trùng trong file (đã giữ dòng đầu tiên):
+                </div>
+                <pre style={{ margin: 0, fontSize: 12, maxHeight: 200, overflow: 'auto' }}>{dupList}</pre>
+              </div>
+            ),
+            duration: 10,
+          });
+        }
         if (result.errors && result.errors.length > 0) {
           message.warning(`${result.errors.length} dòng có lỗi`);
         }
@@ -239,11 +258,11 @@ export default function ProductCatalog() {
         <Card size="small" title="Import Data" style={{ marginBottom: 16 }}>
           <Space direction="vertical" style={{ width: '100%' }}>
             <Text type="secondary">
-              Upload file CSV hoặc thêm từng dòng vào Product Catalog.
+              Upload file CSV hoặc Excel (.xlsx, .xls) hoặc thêm từng dòng vào Product Catalog.
             </Text>
             <Space wrap>
               <Upload
-                accept=".csv"
+                accept=".csv,.xlsx,.xls"
                 showUploadList={false}
                 beforeUpload={handleUpload}
                 maxCount={1}
@@ -253,7 +272,7 @@ export default function ProductCatalog() {
                   icon={<UploadOutlined />}
                   loading={uploading}
                 >
-                  Upload CSV File
+                  Upload CSV / Excel
                 </Button>
               </Upload>
               <Button

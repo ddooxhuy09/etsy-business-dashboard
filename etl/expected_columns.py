@@ -178,14 +178,16 @@ RAW_COLUMNS_BANK_TRANSACTIONS = [
     "Diễn giải (Description)",
 ]
 
-# 8) product_catalog (Danh mục sản phẩm) — product_catalog.csv
+# 8) product_catalog (Danh mục sản phẩm) — product_catalog.csv / .xlsx
+# Format mới: Product Line ID, Product Line Name, Product ID, Product Name, Variant ID, Variant Name
+# Format cũ (legacy): Product line ID, Product line, Product ID, Product, Variant ID, Variants
 RAW_COLUMNS_PRODUCT_CATALOG = [
-    "Product line ID",
-    "Product line",
+    "Product Line ID",
+    "Product Line Name",
     "Product ID",
-    "Product",
+    "Product Name",
     "Variant ID",
-    "Variants",
+    "Variant Name",
 ]
 
 # Map key → danh sách cột (chỉ để tham khảo / tài liệu)
@@ -271,13 +273,20 @@ def validate_columns(key: str, columns: List[str]) -> List[str]:
             errors.append("Thiếu cột chứa 'Description' hoặc 'Diễn giải' (cần cho xử lý giao dịch)")
 
     elif key == "product_catalog":
-        required = [
-            "Product line ID", "Product line", "Product ID", "Product",
-            "Variant ID", "Variants",
+        # Chấp nhận cả format mới (Product Line Name, Product Name, Variant Name)
+        # và format cũ (Product line, Product, Variants) — case-insensitive
+        required_any_groups = [
+            ["product line id"],
+            ["product line name", "product line"],
+            ["product id"],
+            ["product name", "product"],
+            ["variant id"],
+            ["variant name", "variants"],
         ]
-        for r in required:
-            if _norm(r) not in col_set:
-                errors.append(f"Thiếu cột bắt buộc: {r}")
+        for group in required_any_groups:
+            if not any(norm_key in col_set for norm_key in group):
+                display = " hoặc ".join(f'"{g}"' for g in group)
+                errors.append(f"Thiếu cột bắt buộc: {display}")
 
     else:
         # Key không có trong schema → bỏ qua (không báo lỗi)
