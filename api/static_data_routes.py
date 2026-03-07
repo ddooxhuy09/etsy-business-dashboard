@@ -244,3 +244,18 @@ def delete_bank_transactions(ids: list[int] = Body(..., embed=True)):
         (ids,),
     )
     return {"ok": True, "deleted": len(ids)}
+
+
+@router.delete("/product-catalog")
+def delete_product_catalog(ids: list[int] = Body(..., embed=True)):
+    """
+    Delete product catalog rows by primary keys (product_catalog_key).
+    """
+    if not ids:
+        raise HTTPException(status_code=400, detail="No ids provided")
+    ids = [int(i) for i in ids]
+    execute_query(
+        "DELETE FROM dim_product_catalog WHERE product_catalog_key = ANY(%s)",
+        (ids,),
+    )
+    return {"ok": True, "deleted": len(ids)}

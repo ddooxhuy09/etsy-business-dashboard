@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Card, Upload, Button, message, Space, Typography, Alert, Table, Input, Spin, Modal, Form, Select } from 'antd';
-import { UploadOutlined, FileTextOutlined, CheckCircleOutlined, SearchOutlined, ClearOutlined, PlusOutlined } from '@ant-design/icons';
-import { fetchProductCatalog, fetchProductCatalogCount, uploadProductCatalog, importProductCatalogRow } from '../api/staticDataApi';
+import { Card, Upload, Button, message, Space, Typography, Table, Input, Spin, Modal, Form, Select, Popconfirm } from 'antd';
+import { UploadOutlined, FileTextOutlined, SearchOutlined, ClearOutlined, PlusOutlined, DeleteOutlined } from '@ant-design/icons';
+import { fetchProductCatalog, fetchProductCatalogCount, uploadProductCatalog, importProductCatalogRow, deleteProductCatalogRows } from '../api/staticDataApi';
 
 const { Title, Text } = Typography;
 const { Search } = Input;
@@ -20,6 +20,8 @@ export default function ProductCatalog() {
   const [importing, setImporting] = useState(false);
   const [form] = Form.useForm();
   const [productLineFilter, setProductLineFilter] = useState(null);
+  const [selectedRowKeys, setSelectedRowKeys] = useState([]);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     loadCount();
@@ -147,6 +149,23 @@ export default function ProductCatalog() {
     setSortOrder('asc');
     setProductLineFilter(null);
     setPage(1);
+  };
+
+  const handleDeleteSelected = async () => {
+    setDeleting(true);
+    try {
+      const result = await deleteProductCatalogRows(selectedRowKeys);
+      if (result.ok) {
+        message.success(`Đã xóa ${result.deleted} dòng`);
+        setSelectedRowKeys([]);
+        loadCount();
+        loadData();
+      }
+    } catch (error) {
+      message.error('Xóa thất bại: ' + (error?.response?.data?.detail || error.message));
+    } finally {
+      setDeleting(false);
+    }
   };
 
   // Get unique product_line_id for filter
@@ -332,6 +351,33 @@ export default function ProductCatalog() {
               rowKey="product_catalog_key"
               size="small"
               scroll={{ x: 'max-content' }}
+              rowSelection={{
+                selectedRowKeys,
+                onChange: (keys) => setSelectedRowKeys(keys),
+                preserveSelectedRowKeys: true,
+              }}
+              title={() =>
+                selectedRowKeys.length > 0 ? (
+                  <Space>
+                    <span style={{ color: '#1890ff' }}>Đã chọn {selectedRowKeys.length} dòng</span>
+                    <Popconfirm
+                      title={`Xóa ${selectedRowKeys.length} dòng đã chọn?`}
+                      description="Hành động này không thể hoàn tác."
+                      onConfirm={handleDeleteSelected}
+                      okText="Xóa"
+                      cancelText="Hủy"
+                      okButtonProps={{ danger: true }}
+                    >
+                      <Button danger size="small" icon={<DeleteOutlined />} loading={deleting}>
+                        Xóa {selectedRowKeys.length} dòng
+                      </Button>
+                    </Popconfirm>
+                    <Button size="small" onClick={() => setSelectedRowKeys([])}>
+                      Bỏ chọn
+                    </Button>
+                  </Space>
+                ) : null
+              }
               pagination={{
                 current: page,
                 pageSize,

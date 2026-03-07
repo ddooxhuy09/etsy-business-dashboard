@@ -25,6 +25,10 @@ export function importProductCatalogRow(row) {
   return api.post('/api/static/product-catalog/import-row', row).then((r) => r.data);
 }
 
+export function deleteProductCatalogRows(ids) {
+  return api.delete('/api/static/product-catalog', { data: { ids } }).then((r) => r.data);
+}
+
 // Bank Transactions API
 export function fetchBankTransactions({ limit = 100, offset = 0, search, sort_by, sort_order, account_number } = {}) {
   const params = { limit, offset };
