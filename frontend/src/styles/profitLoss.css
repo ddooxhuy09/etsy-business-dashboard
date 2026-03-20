@@ -1,0 +1,133 @@
+/* Profit & Loss table – scoped to .pl-page */
+.pl-page {
+  --pl-bg: #fafbfc;
+  --pl-border: #e8ecf0;
+  --pl-header-bg: #1e3a5f;
+  --pl-header-text: #fff;
+  --pl-section-bg: #e8f4fc;
+  --pl-section-text: #0c4a6e;
+  --pl-profit-bg: #ecfdf5;
+  --pl-profit-border: #059669;
+  --pl-num-bg: #f8fafc;
+  --pl-hover: #f1f5f9;
+  --pl-text: #1e293b;
+  --pl-muted: #64748b;
+}
+
+.pl-page .pl-table-wrapper {
+  border: 1px solid var(--pl-border);
+  border-radius: 8px;
+  overflow: hidden;
+  background: #fff;
+}
+
+.pl-page .pl-table .ant-table {
+  font-size: 13px;
+}
+
+.pl-page .pl-table .ant-table-thead > tr > th {
+  background: var(--pl-header-bg) !important;
+  color: var(--pl-header-text) !important;
+  font-weight: 600;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  padding: 12px 14px !important;
+  border-bottom: 2px solid rgba(255,255,255,0.2) !important;
+  border-right: 1px solid rgba(255,255,255,0.15) !important;
+}
+
+.pl-page .pl-table .ant-table-thead > tr > th:last-child {
+  border-right: none !important;
+}
+
+.pl-page .pl-table .ant-table-thead > tr > th.ant-table-cell-fix-left-first {
+  border-right: 1px solid rgba(255,255,255,0.15) !important;
+}
+
+.pl-page .pl-table .ant-table-tbody > tr > td {
+  padding: 10px 14px !important;
+  border-bottom: 1px solid var(--pl-border) !important;
+  border-right: 1px solid var(--pl-border) !important;
+  vertical-align: middle !important;
+}
+
+.pl-page .pl-table .ant-table-tbody > tr > td:last-child {
+  border-right: none !important;
+}
+
+/* Numeric columns: right-align, monospace, tabular-nums */
+.pl-page .pl-table .ant-table-tbody > tr > td.ant-table-cell:not(:first-child) {
+  font-family: 'SF Mono', 'Consolas', 'Monaco', 'JetBrains Mono', monospace;
+  font-variant-numeric: tabular-nums;
+  font-size: 13px;
+  color: var(--pl-text);
+}
+
+.pl-page .pl-table .ant-table-tbody > tr:hover > td {
+  background: var(--pl-hover) !important;
+}
+
+/* Section headers: Revenue (Sales), COGS, Operating Expenses, Net Income */
+.pl-page .pl-table .ant-table-tbody > tr.pl-section-header > td {
+  background: var(--pl-section-bg) !important;
+  color: var(--pl-section-text) !important;
+  font-weight: 700;
+  font-size: 14px;
+  padding: 12px 14px !important;
+  border-bottom: 2px solid #bae6fd !important;
+}
+
+.pl-page .pl-table .ant-table-tbody > tr.pl-section-header:hover > td {
+  background: var(--pl-section-bg) !important;
+}
+
+/* Profit row */
+.pl-page .pl-table .ant-table-tbody > tr.pl-profit-row > td {
+  background: var(--pl-profit-bg) !important;
+  font-weight: 700;
+  font-size: 14px;
+  padding: 12px 14px !important;
+  border-top: 2px solid var(--pl-profit-border) !important;
+  border-bottom: 2px solid var(--pl-profit-border) !important;
+}
+
+.pl-page .pl-table .ant-table-tbody > tr.pl-profit-row > td.ant-table-cell:not(:first-child) {
+  color: #047857;
+}
+
+.pl-page .pl-table .ant-table-tbody > tr.pl-profit-row:hover > td {
+  background: var(--pl-profit-bg) !important;
+}
+
+/* Subtotal / parent rows (Revenue, Cost of Goods, Etsy Fees, Refund Cost, etc.) – slightly stronger */
+.pl-page .pl-table .ant-table-tbody > tr.pl-subtotal-row > td:first-child {
+  font-weight: 600;
+}
+
+/* Indented children – subtle */
+.pl-page .pl-table .ant-table-tbody > tr > td:first-child {
+  white-space: pre-wrap;
+}
+
+/* Fixed first column when scrolling */
+.pl-page .pl-table .ant-table-cell-fix-left {
+  background: inherit !important;
+}
+
+.pl-page .pl-table .ant-table-tbody > tr.pl-section-header > td.ant-table-cell-fix-left,
+.pl-page .pl-table .ant-table-tbody > tr.pl-profit-row > td.ant-table-cell-fix-left {
+  background: inherit !important;
+}
+
+.pl-page .pl-table .ant-table-tbody > tr.pl-section-header > td.ant-table-cell-fix-left-first {
+  background: var(--pl-section-bg) !important;
+}
+
+.pl-page .pl-table .ant-table-tbody > tr.pl-profit-row > td.ant-table-cell-fix-left-first {
+  background: var(--pl-profit-bg) !important;
+}
+
+.pl-page .pl-table .ant-table-thead > tr > th.ant-table-cell-fix-left-first {
+  background: var(--pl-header-bg) !important;
+}

@@ -1,0 +1,84 @@
+/* Product Cost page styles – scoped to .product-cost-page */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+.product-cost-page {
+  --pc-bg-primary: #f8fafc;
+  --pc-bg-secondary: #ffffff;
+  --pc-bg-elevated: #f1f5f9;
+  --pc-bg-hover: #e2e8f0;
+  --pc-header-bg: #1e3a5f;
+  --pc-header-text: #ffffff;
+  --pc-accent-blue: #2563eb;
+  --pc-accent-orange: #f97316;
+  --pc-accent-teal: #0d9488;
+  --pc-border-light: #e2e8f0;
+  --pc-border-default: #cbd5e1;
+  --pc-text-primary: #1e293b;
+  --pc-text-secondary: #475569;
+  --pc-text-muted: #64748b;
+  --pc-positive: #059669;
+  --pc-negative: #dc2626;
+  --pc-expense: #d97706;
+  --pc-total-bg: #f97316;
+  --pc-total-text: #ffffff;
+  --pc-spacing-sm: 8px;
+  --pc-spacing-md: 16px;
+  --pc-spacing-lg: 24px;
+  --pc-spacing-xl: 32px;
+  --pc-radius-md: 8px;
+  --pc-radius-lg: 12px;
+  --pc-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
+  --pc-shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+  --pc-shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+}
+
+.product-cost-page .product-cost-container { max-width: 1400px; margin: 0 auto; padding: var(--pc-spacing-lg); }
+.product-cost-page .page-header { margin-bottom: var(--pc-spacing-xl); padding-bottom: var(--pc-spacing-lg); border-bottom: 2px solid var(--pc-header-bg); }
+.product-cost-page .page-title { color: var(--pc-header-bg) !important; font-weight: 700 !important; margin-bottom: 4px !important; font-size: 28px !important; }
+.product-cost-page .page-subtitle { color: var(--pc-text-secondary) !important; font-size: 15px; }
+.product-cost-page .table-container { background: var(--pc-bg-secondary); border: 1px solid var(--pc-border-light); border-radius: var(--pc-radius-lg); overflow: hidden; box-shadow: var(--pc-shadow-lg); }
+.product-cost-page .product-cost-table .ant-table-thead > tr > th { background: var(--pc-header-bg) !important; color: var(--pc-header-text) !important; font-weight: 600; font-size: 13px; text-transform: uppercase; }
+.product-cost-page .product-cost-table .ant-table-tbody > tr > td { border-bottom: 1px solid var(--pc-border-light) !important; }
+.product-cost-page .product-cost-table .ant-table-tbody > tr:hover > td { background: var(--pc-bg-elevated) !important; }
+.product-cost-page .product-line-tag { font-weight: 600; font-size: 11px; padding: 4px 10px; border-radius: 4px; }
+.product-cost-page .product-link { display: inline-flex; align-items: center; gap: var(--pc-spacing-sm); color: var(--pc-accent-blue); text-decoration: none; }
+.product-cost-page .product-link:hover { color: var(--pc-header-bg); text-decoration: underline; }
+.product-cost-page .product-name { font-weight: 600; }
+.product-cost-page .link-icon { font-size: 12px; color: var(--pc-text-muted); }
+.product-cost-page .product-link:hover .link-icon { color: var(--pc-accent-blue); }
+.product-cost-page .product-id-cell { font-family: 'JetBrains Mono', monospace; font-size: 12px; color: var(--pc-text-muted) !important; }
+.product-cost-page .money-cell { font-family: 'JetBrains Mono', monospace; font-weight: 500; font-size: 13px; }
+.product-cost-page .money-cell.positive { color: var(--pc-positive); font-weight: 600; }
+.product-cost-page .money-cell.negative { color: var(--pc-negative); font-weight: 600; }
+.product-cost-page .money-cell.expense { color: var(--pc-expense); }
+.product-cost-page .money-cell.profit { font-weight: 700; }
+.product-cost-page .unit-cell { font-family: 'JetBrains Mono', monospace; font-weight: 600; color: var(--pc-accent-teal) !important; }
+.product-cost-page .orders-cell { color: var(--pc-text-secondary) !important; }
+.product-cost-page .expanded-row-content { padding: var(--pc-spacing-md) var(--pc-spacing-xl); background: var(--pc-bg-primary); border-top: 1px solid var(--pc-border-light); }
+.product-cost-page .variants-table .ant-table-thead > tr > th { background: var(--pc-bg-elevated) !important; color: var(--pc-text-secondary) !important; font-size: 11px; font-weight: 600; text-transform: uppercase; }
+.product-cost-page .variants-table .ant-table-tbody > tr > td { border-bottom: 1px solid var(--pc-border-light) !important; }
+.product-cost-page .variant-name-cell { color: var(--pc-text-secondary) !important; font-size: 13px; }
+
+/* Product Detail */
+.product-cost-page .product-detail-container { max-width: 1200px; margin: 0 auto; padding: var(--pc-spacing-lg); }
+.product-cost-page .detail-header { margin-bottom: var(--pc-spacing-xl); }
+.product-cost-page .back-button { color: var(--pc-accent-blue) !important; padding: 0 !important; height: auto !important; margin-bottom: var(--pc-spacing-md); font-size: 14px; font-weight: 500; }
+.product-cost-page .back-button:hover { color: var(--pc-header-bg) !important; }
+.product-cost-page .product-title { color: var(--pc-header-bg) !important; font-weight: 700 !important; margin: 0 !important; font-size: 28px !important; }
+.product-cost-page .product-id { color: var(--pc-text-muted) !important; font-family: 'JetBrains Mono', monospace; font-size: 13px; }
+.product-cost-page .detail-summary { display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--pc-spacing-md); margin-bottom: var(--pc-spacing-xl); }
+.product-cost-page .summary-item { background: var(--pc-bg-secondary); border: 1px solid var(--pc-border-light); border-radius: var(--pc-radius-md); padding: var(--pc-spacing-lg); }
+.product-cost-page .detail-table-container { background: var(--pc-bg-secondary); border: 1px solid var(--pc-border-light); border-radius: var(--pc-radius-lg); overflow: hidden; box-shadow: var(--pc-shadow-lg); }
+.product-cost-page .product-detail-table .ant-table-thead > tr > th { background: var(--pc-header-bg) !important; color: var(--pc-header-text) !important; font-weight: 600; font-size: 12px; text-transform: uppercase; }
+.product-cost-page .product-detail-table .ant-table-tbody > tr > td { border-bottom: 1px solid var(--pc-border-light) !important; }
+.product-cost-page .metric-row-profit { background: var(--pc-total-bg) !important; }
+.product-cost-page .metric-row-profit > td { background: var(--pc-total-bg) !important; color: var(--pc-total-text) !important; border-top: 2px solid var(--pc-header-bg) !important; }
+.product-cost-page .metric-cell { display: flex; flex-direction: column; }
+.product-cost-page .metric-main { display: flex; align-items: center; gap: var(--pc-spacing-sm); }
+.product-cost-page .cogs-breakdown { margin-top: var(--pc-spacing-md); padding-top: var(--pc-spacing-md); border-top: 1px dashed var(--pc-border-default); }
+.product-cost-page .cogs-item { display: flex; justify-content: space-between; align-items: center; padding: 4px 0; }
+.product-cost-page .cogs-amount { font-family: 'JetBrains Mono', monospace; font-size: 13px; color: var(--pc-expense); font-weight: 600; }
+.product-cost-page .total-value { font-family: 'JetBrains Mono', monospace; font-size: 14px; font-weight: 700; }
+.product-cost-page .total-value.positive { color: var(--pc-positive); }
+.product-cost-page .total-value.negative { color: var(--pc-negative); }
+.product-cost-page .variant-value { font-family: 'JetBrains Mono', monospace; font-size: 13px; }

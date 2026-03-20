@@ -1,0 +1,554 @@
+"""
+API routes for importing Bank Transactions data.
+Supports CSV/Excel file upload and single-row import.
+"""
+import io
+import math
+import logging
+import pandas as pd
+from datetime import datetime
+from fastapi import APIRouter, File, UploadFile, HTTPException, Body
+from typing import Optional
+from pydantic import BaseModel
+
+from shared.db import run_query, execute_query, get_database_url
+from etl.cleaners.process_bank_transactions import clean_bank_transactions_data, parse_description
+from etl.expected_columns import validate_columns, get_raw_columns_list
+
+# Exchange rate: 1 USD = 24,000 VND
+# All imported monetary values are in VND and are converted to USD at import time.
+VND_TO_USD_RATE = 24_000
+
+
+def _vnd_to_usd(value) -> float | None:
+    """Convert a VND amount to USD and ensure non-negative.
+
+    - Takes the absolute value first (bank statement debits are sometimes stored negative).
+    - Divides by VND_TO_USD_RATE.
+    - Returns None for null/NaN inputs.
+    """
+    if value is None:
+        return None
+    try:
+        v = float(value)
+        if math.isnan(v) or not math.isfinite(v):
+            return None
+        return abs(v) / VND_TO_USD_RATE
+    except (TypeError, ValueError):
+        return None
+
+router = APIRouter(prefix="/api/static", tags=["bank-account"])
+logger = logging.getLogger(__name__)
+
+
+def _get_or_create_time_key(date_str: str) -> Optional[int]:
+    """Get or create time_key from date string (YYYY-MM-DD or DD/MM/YYYY)."""
+    if not date_str:
+        return None
+
+    try:
+        if '-' in date_str and len(date_str) == 10:
+            dt = pd.to_datetime(date_str, format='%Y-%m-%d', errors='raise')
+        elif '/' in date_str:
+            dt = pd.to_datetime(date_str, format='%d/%m/%Y', errors='raise')
+        else:
+            dt = pd.to_datetime(date_str, errors='raise')
+
+        if pd.isna(dt):
+            return None
+
+        time_key = int(dt.strftime('%Y%m%d'))
+
+        df = run_query("SELECT time_key FROM dim_time WHERE time_key = %s", (time_key,))
+        if df.empty:
+            full_date = dt.strftime('%Y-%m-%d')
+            year = dt.year
+            quarter = (dt.month - 1) // 3 + 1
+            month = dt.month
+            iso_cal = dt.isocalendar()
+            week_of_year = iso_cal[1] if isinstance(iso_cal, tuple) else iso_cal.week
+            day_of_month = dt.day
+            day_of_week = dt.weekday() + 1
+            day_of_year = dt.timetuple().tm_yday
+            month_name = dt.strftime('%B')
+            day_name = dt.strftime('%A')
+            quarter_name = f'Q{quarter}'
+            is_weekend = 1 if dt.weekday() >= 5 else 0
+            is_holiday = 0
+            is_business_day = 1 if dt.weekday() < 5 else 0
+
+            execute_query("""
+                INSERT INTO dim_time (
+                    time_key, full_date, year, quarter, month, week_of_year,
+                    day_of_month, day_of_week, day_of_year, month_name, day_name,
+                    quarter_name, is_weekend, is_holiday, is_business_day
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """, (
+                time_key, full_date, year, quarter, month, week_of_year,
+                day_of_month, day_of_week, day_of_year, month_name, day_name,
+                quarter_name, is_weekend, is_holiday, is_business_day
+            ))
+
+        return time_key
+    except Exception as e:
+        logging.error(f"Error parsing date '{date_str}': {str(e)}")
+        return None
+
+
+def _get_or_create_bank_account_key(account_number: str, account_name: str = None, opening_date: str = None) -> Optional[int]:
+    """Get or create bank_account_key from account_number."""
+    if not account_number:
+        return None
+
+    df = run_query("SELECT bank_account_key FROM dim_bank_account WHERE account_number = %s", (account_number,))
+    if not df.empty:
+        return int(df.iloc[0]['bank_account_key'])
+
+    account_name = account_name or account_number
+    opening_date = opening_date or None
+
+    max_key_df = run_query("SELECT MAX(bank_account_key) as max_key FROM dim_bank_account")
+    max_key = int(max_key_df.iloc[0]['max_key']) if not max_key_df.empty and max_key_df.iloc[0]['max_key'] is not None else 0
+    new_key = max_key + 1
+
+    execute_query("""
+        INSERT INTO dim_bank_account (
+            bank_account_key, account_number, account_name, opening_date,
+            is_active, currency_code, created_date, updated_date
+        ) VALUES (%s, %s, %s, %s, TRUE, 'VND', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+    """, (new_key, account_number, account_name, opening_date))
+
+    return new_key
+
+
+def _get_product_catalog_key(product_line_id: str, product_id: str, variant_id: str) -> Optional[int]:
+    """Get product_catalog_key from composite key."""
+    if not all([product_line_id, product_id, variant_id]):
+        return None
+
+    df = run_query("""
+        SELECT product_catalog_key FROM dim_product_catalog
+        WHERE product_line_id = %s AND product_id = %s AND variant_id = %s
+    """, (product_line_id, product_id, variant_id))
+
+    if not df.empty:
+        return int(df.iloc[0]['product_catalog_key'])
+    return None
+
+
+@router.post("/bank-transactions/upload")
+async def upload_bank_transactions(file: UploadFile = File(...)):
+    """Upload and import bank transactions file (CSV or Excel).
+
+    Expected columns:
+    - Transaction Date / Ngày GD
+    - Reference No. / Mã giao dịch
+    - Account Number / Số tài khoản truy vấn
+    - Account Name / Tên tài khoản truy vấn
+    - Opening Date / Ngày mở tài khoản (optional)
+    - Credit Amount / Phát sinh có
+    - Debit Amount / Phát sinh nợ
+    - Balance / Số dư
+    - Description / Diễn giải
+    """
+    filename = (file.filename or "").lower()
+    if not (filename.endswith(".csv") or filename.endswith(".xlsx") or filename.endswith(".xls")):
+        raise HTTPException(status_code=400, detail="File must be CSV or Excel (.xlsx, .xls) format")
+
+    try:
+        content = await file.read()
+
+        if filename.endswith(".csv"):
+            df_raw = pd.read_csv(io.BytesIO(content), header=None)
+        else:
+            if filename.endswith(".xls") and not filename.endswith(".xlsx"):
+                try:
+                    import xlrd  # type: ignore
+                    df_raw = pd.read_excel(io.BytesIO(content), header=None, engine="xlrd")
+                except Exception as e:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Không đọc được file .xls. Vui lòng lưu lại thành .xlsx hoặc CSV. Chi tiết: {e}",
+                    )
+            else:
+                df_raw = pd.read_excel(io.BytesIO(content), header=None)
+
+        header_row_idx = None
+        for i, row in df_raw.iterrows():
+            values = [str(v) for v in row.values if pd.notna(v)]
+            joined = " ".join(values).lower()
+            if "description" in joined or "diễn giải" in joined or "dien giai" in joined:
+                header_row_idx = i
+                break
+
+        if header_row_idx is None:
+            header = df_raw.iloc[0]
+            df = df_raw.iloc[1:].copy()
+            df.columns = header
+        else:
+            header = df_raw.iloc[header_row_idx]
+            df = df_raw.iloc[header_row_idx + 1:].copy()
+            df.columns = header
+
+        df = df.dropna(how="all")
+        if df.empty:
+            raise HTTPException(status_code=400, detail="Không tìm thấy bảng giao dịch trong file")
+        df.columns = [str(c) if c is not None else "" for c in df.columns]
+
+        header_errors = validate_columns("bank_transactions", df.columns.tolist())
+        if header_errors:
+            expected = get_raw_columns_list("bank_transactions")
+            return {
+                "ok": False,
+                "message": "Sai định dạng cột bank_transactions CSV",
+                "imported": 0,
+                "errors": header_errors,
+                "expected_columns": expected,
+                "received_columns": list(df.columns),
+            }
+
+        column_mapping = {}
+        for col in df.columns:
+            col_lower = col.lower()
+            if "transaction date" in col_lower or "ngày gd" in col_lower or "ngay gd" in col_lower:
+                column_mapping[col] = "transaction_date"
+            elif "reference" in col_lower or "mã giao dịch" in col_lower or "ma giao dich" in col_lower:
+                column_mapping[col] = "reference_number"
+            elif "account number" in col_lower and ("truy vấn" in col_lower or "truy van" in col_lower):
+                column_mapping[col] = "account_number"
+            elif "account name" in col_lower and ("truy vấn" in col_lower or "truy van" in col_lower):
+                column_mapping[col] = "account_name"
+            elif "opening date" in col_lower or "ngày mở" in col_lower or "ngay mo" in col_lower:
+                column_mapping[col] = "opening_date"
+            elif "credit amount" in col_lower or "phát sinh có" in col_lower or "phat sinh co" in col_lower:
+                column_mapping[col] = "credit_amount"
+            elif "debit amount" in col_lower or "phát sinh nợ" in col_lower or "phat sinh no" in col_lower:
+                column_mapping[col] = "debit_amount"
+            elif ("balance" in col_lower and "after" not in col_lower) or "số dư" in col_lower or "so du" in col_lower:
+                column_mapping[col] = "balance_after_transaction"
+            elif "description" in col_lower or "diễn giải" in col_lower or "dien giai" in col_lower:
+                column_mapping[col] = "transaction_description"
+        df = df.rename(columns=column_mapping)
+
+        if "transaction_description" in df.columns:
+            parsed_df = df["transaction_description"].apply(lambda d: pd.Series(parse_description(d)))
+            for col in ["pl_account_number", "parsed_product_line_id", "parsed_product_id", "parsed_variant_id"]:
+                if col in parsed_df.columns:
+                    df[col] = parsed_df[col]
+
+        if "transaction_date" in df.columns:
+            df["transaction_date"] = pd.to_datetime(df["transaction_date"], errors="coerce", dayfirst=True)
+            df["transaction_date"] = df["transaction_date"].dt.strftime("%Y-%m-%d")
+        if "opening_date" in df.columns:
+            df["opening_date"] = pd.to_datetime(df["opening_date"], errors="coerce", dayfirst=True)
+            df["opening_date"] = df["opening_date"].dt.strftime("%Y-%m-%d")
+
+        for col in ["credit_amount", "debit_amount", "balance_after_transaction"]:
+            if col in df.columns:
+                df[col] = (
+                    df[col].astype(str).str.replace(",", "", regex=False).str.replace(" ", "", regex=False)
+                )
+                df[col] = pd.to_numeric(df[col], errors="coerce")
+                # Convert VND → USD and ensure non-negative
+                df[col] = df[col].apply(_vnd_to_usd)
+
+        try:
+            debug_cols = ['transaction_date', 'reference_number', 'account_number', 'transaction_description',
+                          'pl_account_number', 'debit_amount', 'credit_amount', 'balance_after_transaction']
+            existing_debug_cols = [c for c in debug_cols if c in df.columns]
+            if existing_debug_cols:
+                print("\n=== BANK UPLOAD DEBUG (first 20 rows) ===")
+                import pandas as _pd
+                with _pd.option_context("display.max_columns", None, "display.width", 200):
+                    print(df[existing_debug_cols].head(20).to_string(index=False))
+        except Exception as _dbg_e:
+            print("BANK UPLOAD DEBUG failed:", repr(_dbg_e))
+
+        import psycopg2
+        from psycopg2.extras import execute_values
+
+        errors = []
+
+        if "account_number" not in df.columns:
+            return {"ok": False, "message": "Missing account_number column after mapping", "imported": 0, "errors": ["Missing account_number"]}
+
+        df["account_number"] = df["account_number"].astype(str).str.strip()
+        df.loc[df["account_number"].str.lower().isin(["nan", "none", ""]), "account_number"] = None
+
+        if "account_name" in df.columns:
+            df["account_name"] = df["account_name"].astype(str).str.strip()
+            df.loc[df["account_name"].str.lower().isin(["nan", "none", ""]), "account_name"] = None
+        else:
+            df["account_name"] = None
+
+        df["account_name"] = df["account_name"].fillna(df["account_number"])
+
+        if "transaction_date" in df.columns:
+            dt = pd.to_datetime(df["transaction_date"], errors="coerce")
+            df["transaction_date_key"] = dt.dt.strftime("%Y%m%d")
+            df.loc[dt.isna(), "transaction_date_key"] = None
+            df["transaction_date_key"] = pd.to_numeric(df["transaction_date_key"], errors="coerce").astype("Int64")
+        else:
+            df["transaction_date_key"] = None
+
+        missing_acct = df["account_number"].isna()
+        if missing_acct.any():
+            bad_idx = df.index[missing_acct].tolist()[:10]
+            for i in bad_idx:
+                errors.append(f"Row {int(i) + 1}: Missing account_number")
+            df = df.loc[~missing_acct].copy()
+
+        if df.empty:
+            return {"ok": True, "message": "No valid rows to import", "imported": 0, "errors": errors[:10]}
+
+        if "parsed_product_line_id" in df.columns:
+            df["is_business_related"] = df["parsed_product_line_id"].notna().astype(int)
+        else:
+            df["is_business_related"] = 0
+
+        dsn = get_database_url().replace("postgresql+psycopg2://", "postgresql://")
+
+        imported = 0
+        with psycopg2.connect(dsn) as conn:
+            with conn.cursor() as cur:
+                time_keys = df["transaction_date_key"].dropna().astype(int).unique().tolist()
+                if time_keys:
+                    cur.execute("SELECT time_key FROM dim_time WHERE time_key = ANY(%s)", (time_keys,))
+                    existing = {r[0] for r in cur.fetchall()}
+                    missing = [k for k in time_keys if k not in existing]
+                    if missing:
+                        missing_dates = pd.to_datetime(pd.Series(missing, dtype="int64").astype(str), format="%Y%m%d", errors="coerce")
+                        tdf = pd.DataFrame({"time_key": missing, "dt": missing_dates})
+                        tdf = tdf.dropna(subset=["dt"])
+                        if not tdf.empty:
+                            tdf["full_date"] = tdf["dt"].dt.date
+                            tdf["year"] = tdf["dt"].dt.year
+                            tdf["quarter"] = ((tdf["dt"].dt.month - 1) // 3 + 1).astype(int)
+                            tdf["month"] = tdf["dt"].dt.month
+                            tdf["week_of_year"] = tdf["dt"].dt.isocalendar().week.astype(int)
+                            tdf["day_of_month"] = tdf["dt"].dt.day
+                            tdf["day_of_week"] = (tdf["dt"].dt.weekday + 1).astype(int)
+                            tdf["day_of_year"] = tdf["dt"].dt.dayofyear
+                            tdf["month_name"] = tdf["dt"].dt.strftime("%B")
+                            tdf["day_name"] = tdf["dt"].dt.strftime("%A")
+                            tdf["quarter_name"] = "Q" + tdf["quarter"].astype(str)
+                            tdf["is_weekend"] = (tdf["dt"].dt.weekday >= 5).astype(bool)
+                            tdf["is_holiday"] = False
+                            tdf["is_business_day"] = (tdf["dt"].dt.weekday < 5).astype(bool)
+
+                            time_rows = list(zip(
+                                tdf["time_key"].astype(int).tolist(), tdf["full_date"].tolist(),
+                                tdf["year"].astype(int).tolist(), tdf["quarter"].astype(int).tolist(),
+                                tdf["month"].astype(int).tolist(), tdf["week_of_year"].astype(int).tolist(),
+                                tdf["day_of_month"].astype(int).tolist(), tdf["day_of_week"].astype(int).tolist(),
+                                tdf["day_of_year"].astype(int).tolist(), tdf["month_name"].tolist(),
+                                tdf["day_name"].tolist(), tdf["quarter_name"].tolist(),
+                                tdf["is_weekend"].tolist(), tdf["is_holiday"].tolist(), tdf["is_business_day"].tolist(),
+                            ))
+                            execute_values(cur, """
+                                INSERT INTO dim_time (
+                                    time_key, full_date, year, quarter, month, week_of_year,
+                                    day_of_month, day_of_week, day_of_year, month_name, day_name,
+                                    quarter_name, is_weekend, is_holiday, is_business_day
+                                ) VALUES %s ON CONFLICT (time_key) DO NOTHING
+                            """, time_rows, page_size=1000)
+
+                acct_df = df[["account_number", "account_name"]].drop_duplicates(subset=["account_number"]).copy()
+                if "opening_date" in df.columns:
+                    od = pd.to_datetime(df["opening_date"], errors="coerce")
+                    df["opening_date_norm"] = od.dt.date
+                    acct_df = df[["account_number", "account_name", "opening_date_norm"]].drop_duplicates(subset=["account_number"]).copy()
+                else:
+                    df["opening_date_norm"] = None
+                    acct_df["opening_date_norm"] = None
+
+                acct_rows = list(zip(
+                    acct_df["account_number"].tolist(),
+                    acct_df["account_name"].tolist(),
+                    acct_df["opening_date_norm"].tolist(),
+                ))
+                execute_values(cur, """
+                    INSERT INTO dim_bank_account (account_number, account_name, opening_date)
+                    VALUES %s
+                    ON CONFLICT (account_number)
+                    DO UPDATE SET
+                        account_name = EXCLUDED.account_name,
+                        opening_date = COALESCE(EXCLUDED.opening_date, dim_bank_account.opening_date),
+                        updated_date = CURRENT_TIMESTAMP
+                    RETURNING bank_account_key, account_number
+                """, acct_rows, page_size=1000)
+                returned = cur.fetchall()
+                acct_map = {acc: key for (key, acc) in returned}
+                cur.execute(
+                    "SELECT bank_account_key, account_number FROM dim_bank_account WHERE account_number = ANY(%s)",
+                    (acct_df["account_number"].tolist(),),
+                )
+                acct_map.update({acc: key for (key, acc) in cur.fetchall()})
+
+                def _safe_str(v):
+                    if v is None or (isinstance(v, float) and (math.isnan(v) or not math.isfinite(v))):
+                        return None
+                    s = str(v)
+                    if s.lower() in ["nan", "none", ""]:
+                        return None
+                    return s
+
+                insert_rows = []
+                for _, row in df.iterrows():
+                    bank_account_key = acct_map.get(row["account_number"])
+                    if not bank_account_key:
+                        continue
+                    is_business_val = row.get("is_business_related")
+                    if pd.isna(is_business_val):
+                        is_business_flag = False
+                    else:
+                        try:
+                            is_business_flag = bool(int(is_business_val))
+                        except Exception:
+                            is_business_flag = False
+                    insert_rows.append((
+                        int(bank_account_key),
+                        int(row["transaction_date_key"]) if pd.notna(row.get("transaction_date_key")) else None,
+                        None,
+                        _safe_str(row.get("reference_number")),
+                        _safe_str(row.get("account_number")),
+                        _safe_str(row.get("transaction_description")),
+                        _safe_str(row.get("pl_account_number")),
+                        _safe_str(row.get("parsed_product_line_id")),
+                        _safe_str(row.get("parsed_product_id")),
+                        _safe_str(row.get("parsed_variant_id")),
+                        float(row["credit_amount"]) if pd.notna(row.get("credit_amount")) else None,
+                        float(row["debit_amount"]) if pd.notna(row.get("debit_amount")) else None,
+                        float(row["balance_after_transaction"]) if pd.notna(row.get("balance_after_transaction")) else None,
+                        is_business_flag,
+                        "bank_statement",
+                    ))
+
+                if insert_rows:
+                    try:
+                        execute_values(cur, """
+                            INSERT INTO fact_bank_transactions (
+                                bank_account_key, transaction_date_key, product_catalog_key,
+                                reference_number, account_number, transaction_description,
+                                pl_account_number, parsed_product_line_id, parsed_product_id, parsed_variant_id,
+                                credit_amount, debit_amount, balance_after_transaction,
+                                is_business_related, data_source
+                            ) VALUES %s
+                        """, insert_rows, page_size=2000)
+                    except Exception as db_err:
+                        from psycopg2.errors import UniqueViolation  # type: ignore
+                        if isinstance(db_err, UniqueViolation) or "duplicate key value violates unique constraint" in str(db_err):
+                            raise HTTPException(
+                                status_code=400,
+                                detail="Duplicate bank transactions detected (same account_number + reference_number). Có thể file sao kê này đã được import trước đó."
+                            )
+                        raise
+                    imported = len(insert_rows)
+                conn.commit()
+
+        return {
+            "ok": True,
+            "message": f"Imported {imported} rows",
+            "imported": imported,
+            "errors": errors[:10]
+        }
+    except Exception as e:
+        logger.exception("Error in bank-transactions upload")
+        import traceback
+        print("Error in bank-transactions upload:", repr(e))
+        traceback.print_exc()
+        raise HTTPException(status_code=400, detail=f"Error processing file: {str(e)}")
+
+
+class BankTransactionRow(BaseModel):
+    transaction_date: str  # YYYY-MM-DD or DD/MM/YYYY
+    reference_number: str
+    account_number: str
+    account_name: Optional[str] = None
+    opening_date: Optional[str] = None
+    credit_amount: Optional[float] = None
+    debit_amount: Optional[float] = None
+    balance_after_transaction: Optional[float] = None
+    transaction_description: Optional[str] = None
+
+
+@router.post("/bank-transactions/import-row")
+def import_bank_transaction_row(row: BankTransactionRow):
+    """Import a single bank transaction row."""
+    try:
+        transaction_date_key = _get_or_create_time_key(row.transaction_date)
+        if transaction_date_key is None:
+            raise HTTPException(status_code=400, detail="Invalid transaction_date format. Expected YYYY-MM-DD or DD/MM/YYYY")
+
+        if not row.account_number:
+            raise HTTPException(status_code=400, detail="account_number is required")
+
+        bank_account_key = _get_or_create_bank_account_key(row.account_number, row.account_name, row.opening_date)
+        if bank_account_key is None:
+            raise HTTPException(status_code=400, detail="Failed to create or retrieve bank_account_key")
+
+        try:
+            parsed = parse_description(row.transaction_description or '')
+            if parsed is None or not isinstance(parsed, dict):
+                parsed = {'pl_account_number': None, 'parsed_product_line_id': None, 'parsed_product_id': None, 'parsed_variant_id': None}
+        except Exception:
+            parsed = {'pl_account_number': None, 'parsed_product_line_id': None, 'parsed_product_id': None, 'parsed_variant_id': None}
+
+        if (
+            parsed.get('parsed_product_line_id') is None
+            and parsed.get('parsed_product_id') is None
+            and parsed.get('parsed_variant_id') is None
+            and (row.transaction_description or '').strip()
+        ):
+            desc = (row.transaction_description or '').strip()
+            first_token = desc.split()[0]
+            if '_' in first_token:
+                parts = first_token.split('_')
+                if len(parts) == 3:
+                    parsed['parsed_product_line_id'] = parts[0].upper()
+                    parsed['parsed_product_id'] = parts[1].upper()
+                    parsed['parsed_variant_id'] = parts[2].upper()
+
+        product_catalog_key = None
+        if parsed.get('parsed_product_line_id') and parsed.get('parsed_product_id') and parsed.get('parsed_variant_id'):
+            product_catalog_key = _get_product_catalog_key(
+                parsed['parsed_product_line_id'], parsed['parsed_product_id'], parsed['parsed_variant_id']
+            )
+
+        is_business_related = bool(
+            parsed.get('parsed_product_line_id') and parsed.get('parsed_product_id') and parsed.get('parsed_variant_id')
+        )
+
+        insert_values = (
+            int(bank_account_key), int(transaction_date_key),
+            int(product_catalog_key) if product_catalog_key is not None else None,
+            str(row.reference_number) if row.reference_number else None,
+            str(row.account_number) if row.account_number else None,
+            str(row.transaction_description) if row.transaction_description else None,
+            str(parsed.get('pl_account_number')) if parsed.get('pl_account_number') else None,
+            str(parsed.get('parsed_product_line_id')) if parsed.get('parsed_product_line_id') else None,
+            str(parsed.get('parsed_product_id')) if parsed.get('parsed_product_id') else None,
+            str(parsed.get('parsed_variant_id')) if parsed.get('parsed_variant_id') else None,
+            _vnd_to_usd(row.credit_amount),
+            _vnd_to_usd(row.debit_amount),
+            _vnd_to_usd(row.balance_after_transaction),
+            is_business_related,
+        )
+
+        execute_query("""
+            INSERT INTO fact_bank_transactions (
+                bank_account_key, transaction_date_key, product_catalog_key,
+                reference_number, account_number, transaction_description,
+                pl_account_number, parsed_product_line_id, parsed_product_id, parsed_variant_id,
+                credit_amount, debit_amount, balance_after_transaction,
+                is_business_related, data_source
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'bank_statement')
+        """, insert_values)
+
+        return {"ok": True, "message": "Imported row successfully"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        error_detail = f"{str(e)}\n{traceback.format_exc()}"
+        raise HTTPException(status_code=400, detail=f"Error importing row: {error_detail}")
