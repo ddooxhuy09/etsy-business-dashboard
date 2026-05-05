@@ -12,7 +12,7 @@ import logging
 
 from config import DATE_FORMATS, EXCHANGE_RATE
 from etl.utils_core import (
-    clean_date_to_yyyymmdd, clean_currency_amount, setup_logging, convert_columns_to_snake_case, ensure_proper_data_types
+    clean_date_to_yyyymmdd, clean_currency_amount, setup_logging, convert_columns_to_snake_case, ensure_proper_data_types, ensure_text_ids
 )
 
 def clean_direct_checkout_data(df: pd.DataFrame) -> pd.DataFrame:
@@ -30,34 +30,22 @@ def clean_direct_checkout_data(df: pd.DataFrame) -> pd.DataFrame:
         df_clean['Order Date'] = pd.to_datetime(df_clean['Order Date'], format=DATE_FORMATS['direct_checkout'], errors='coerce')
     
     # Clean numeric columns
-    numeric_columns = ['Gross Amount', 'Fees', 'Net Amount', 'Posted Gross', 'Posted Fees', 'Posted Net']
+    numeric_columns = ['Gross Amount', 'Fees', 'Net Amount', 'Posted Gross', 'Posted Fees', 'Posted Net', 'Adjusted Gross', 'Adjusted Fees', 'Adjusted Net']
     for col in numeric_columns:
         if col in df_clean.columns:
             df_clean[col] = df_clean[col].apply(clean_currency_amount)
-    
-    # Convert VND to USD using exchange rate (multiply by 100 then divide by exchange rate)
+            # Exchange Rate Processing: apply (value * 100) / 24847 unconditionally
+            df_clean[col] = (df_clean[col] * 100) / 24847
+            
     if 'Currency' in df_clean.columns:
-        try:
-            vnd_mask = df_clean['Currency'].astype(str).str.upper().eq('VND')
-            if vnd_mask.any():
-                # Convert specified columns from VND to USD
-                vnd_columns = ['Gross Amount', 'Fees', 'Net Amount', 'Posted Gross', 'Posted Fees', 'Posted Net']
-                for col in vnd_columns:
-                    if col in df_clean.columns:
-                        df_clean.loc[vnd_mask, col] = (
-                            df_clean.loc[vnd_mask, col] * 100 / EXCHANGE_RATE
-                        ).round(2)
-                
-                # Update currency to USD
-                df_clean.loc[vnd_mask, 'Currency'] = 'USD'
-        except Exception as e:
-            logger.warning(f"Could not convert VND to USD: {e}")
+        df_clean['Currency'] = 'USD'
     
     # Convert column names to snake_case
     df_clean = convert_columns_to_snake_case(df_clean)
     
     # Ensure proper data types for Parquet
     df_clean = ensure_proper_data_types(df_clean, 'direct_checkout')
+    df_clean = ensure_text_ids(df_clean)
     
     logger.info(f"✅ Cleaned {len(df_clean)} direct checkout records")
     return df_clean

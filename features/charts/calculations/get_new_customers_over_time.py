@@ -1,30 +1,30 @@
 from ._streamlit_shim import st  # noqa: F401
 import pandas as pd
 import textwrap
-from shared.query_utils.db_query import execute_query
-from shared.query_utils.chart_helpers import get_customer_type_display
+from core.query_utils.db_query import execute_query
+from core.query_utils.chart_helpers import get_customer_type_display
 
 
 def get_new_customers_over_time(start_date: str = None, end_date: str = None, customer_type: str = 'all'):
     """Get new/returning customers over time based on customer_type filter"""
-    # new/all = count new customers (1 order); return = count returning customers (>1 order)
     having_clause = "HAVING COUNT(DISTINCT order_key) > 1" if customer_type == 'return' else "HAVING COUNT(DISTINCT order_key) = 1"
-    sql = f"""SELECT dtime.full_date as "Date", COUNT(DISTINCT fs.customer_key) as "New Customers"
-           FROM fact_sales fs
-           JOIN dim_time dtime ON fs.sale_date_key = dtime.time_key
-           WHERE fs.customer_key IN (
-               SELECT customer_key
-               FROM fact_sales
-               GROUP BY customer_key
+    sql = f"""SELECT dt.date_key as "Date", COUNT(DISTINCT fo.customer_key) as "New Customers"
+           FROM fact_order_items fs
+           JOIN fact_orders fo ON fs.order_key = fo.order_key
+           JOIN dim_time dt ON fo.sale_date_key = dt.date_key
+           WHERE fo.customer_key IN (
+               SELECT fo_sub.customer_key
+               FROM fact_orders fo_sub
+               GROUP BY fo_sub.customer_key
                {having_clause}
            )"""
     
     params = []
     if start_date:
-        sql += " AND dtime.full_date >= %s::date"
+        sql += " AND dt.date_key >= %s::date"
         params.append(start_date)
     if end_date:
-        sql += " AND dtime.full_date <= %s::date"
+        sql += " AND dt.date_key <= %s::date"
         params.append(end_date)
     
     sql += """ GROUP BY 1 

@@ -1,13 +1,15 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Card, Upload, Button, message, Space, Typography, Alert, Table, Input, Spin, Select, Modal, Form, InputNumber, DatePicker, Switch } from 'antd';
+import { Card, Upload, Button, message, Space, Typography, Alert, Table, Input, Spin, Select, Modal, Form, InputNumber, DatePicker } from 'antd';
 import { UploadOutlined, BankOutlined, CheckCircleOutlined, SearchOutlined, ClearOutlined, PlusOutlined, ReloadOutlined, SettingOutlined } from '@ant-design/icons';
 import { fetchBankTransactions, fetchBankTransactionsCount, uploadBankTransactions, importBankTransactionRow, deleteBankTransactions, fetchPlAccounts, createPlAccount, updatePlAccount, deletePlAccount } from '../api/staticDataApi';
+import { useCurrency } from '../contexts/CurrencyContext';
 import dayjs from 'dayjs';
 
 const { Title, Text } = Typography;
 const { Search } = Input;
 
 export default function BankAccount() {
+  const { fmt, currency } = useCurrency();
   const [uploading, setUploading] = useState(false);
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState({ data: [], total: 0 });
@@ -18,6 +20,8 @@ export default function BankAccount() {
   const [sortOrder, setSortOrder] = useState('desc');
   const [totalCount, setTotalCount] = useState(0);
   const [accountNumber, setAccountNumber] = useState(null);
+  const [dateFrom, setDateFrom] = useState(null);
+  const [dateTo, setDateTo] = useState(null);
   const [importModalVisible, setImportModalVisible] = useState(false);
   const [importing, setImporting] = useState(false);
   const [selectedRowKeys, setSelectedRowKeys] = useState([]);
@@ -33,11 +37,15 @@ export default function BankAccount() {
   useEffect(() => {
     loadCount();
     loadData();
-  }, [page, pageSize, searchText, sortColumn, sortOrder, accountNumber]);
+  }, [page, pageSize, searchText, sortColumn, sortOrder, accountNumber, dateFrom, dateTo]);
 
   const loadCount = async () => {
     try {
-      const result = await fetchBankTransactionsCount(accountNumber || undefined);
+      const result = await fetchBankTransactionsCount(
+        accountNumber || undefined,
+        dateFrom ? dateFrom.format('YYYY-MM-DD') : undefined,
+        dateTo ? dateTo.format('YYYY-MM-DD') : undefined,
+      );
       setTotalCount(result.total || 0);
     } catch (error) {
       console.error('Failed to load count:', error);
@@ -54,6 +62,8 @@ export default function BankAccount() {
         sort_by: sortColumn || undefined,
         sort_order: sortOrder,
         account_number: accountNumber || undefined,
+        date_from: dateFrom ? dateFrom.format('YYYY-MM-DD') : undefined,
+        date_to: dateTo ? dateTo.format('YYYY-MM-DD') : undefined,
       });
       setData({ data: result.data || [], total: result.total || 0 });
     } catch (error) {
@@ -179,6 +189,8 @@ export default function BankAccount() {
     setSortColumn(null);
     setSortOrder('desc');
     setAccountNumber(null);
+    setDateFrom(null);
+    setDateTo(null);
     setPage(1);
   };
 
@@ -270,28 +282,28 @@ export default function BankAccount() {
         ellipsis: true,
       },
       {
-        title: 'Credit (USD)',
+        title: `Credit (${currency})`,
         dataIndex: 'credit_amount',
         key: 'credit_amount',
         width: 110,
         align: 'right',
-        render: (v) => v != null ? Number(v).toLocaleString('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—',
+        render: (v) => v != null ? fmt(v) : '—',
       },
       {
-        title: 'Debit (USD)',
+        title: `Debit (${currency})`,
         dataIndex: 'debit_amount',
         key: 'debit_amount',
         width: 110,
         align: 'right',
-        render: (v) => v != null ? Number(v).toLocaleString('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—',
+        render: (v) => v != null ? fmt(v) : '—',
       },
       {
-        title: 'Balance (USD)',
-        dataIndex: 'balance_after_transaction',
-        key: 'balance_after_transaction',
+        title: `Balance (${currency})`,
+        dataIndex: 'balance',
+        key: 'balance',
         width: 120,
         align: 'right',
-        render: (v) => v != null ? Number(v).toLocaleString('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—',
+        render: (v) => v != null ? fmt(v) : '—',
       },
     ];
 
@@ -308,7 +320,7 @@ export default function BankAccount() {
         </Space>
       ),
     }));
-  }, [sortColumn, sortOrder]);
+  }, [sortColumn, sortOrder, fmt, currency]);
 
   const rowSelection = {
     selectedRowKeys,
@@ -333,18 +345,7 @@ export default function BankAccount() {
     loadPlAccounts();
   };
 
-  const handleToggleActive = async (accountNumber, checked) => {
-    try {
-      await updatePlAccount(accountNumber, { is_active: checked });
-      setPlAccounts(prev =>
-        prev.map(a => a.account_number === accountNumber ? { ...a, is_active: checked } : a)
-      );
-    } catch (e) {
-      message.error('Failed to update account');
-    }
-  };
-
-  const handleChangeCategory = async (accountNumber, category) => {
+const handleChangeCategory = async (accountNumber, category) => {
     try {
       await updatePlAccount(accountNumber, { category });
       setPlAccounts(prev =>
@@ -352,6 +353,20 @@ export default function BankAccount() {
       );
     } catch (e) {
       message.error('Failed to update category');
+    }
+  };
+
+  const handleChangeAccountNumber = async (oldNumber, newNumber) => {
+    const trimmed = newNumber.trim();
+    if (!trimmed || trimmed === oldNumber) return;
+    try {
+      await updatePlAccount(oldNumber, { account_number: trimmed });
+      setPlAccounts(prev =>
+        prev.map(a => a.account_number === oldNumber ? { ...a, account_number: trimmed } : a)
+      );
+      message.success(`Renamed ${oldNumber} → ${trimmed}`);
+    } catch (e) {
+      message.error(e?.response?.data?.detail || 'Failed to rename account number');
     }
   };
 
@@ -394,8 +409,8 @@ export default function BankAccount() {
     }
     setAddingAccount(true);
     try {
-      await createPlAccount({ ...values, is_active: true });
-      message.success(`Added ${values.account_number}`);
+      await createPlAccount(values);
+      message.success(`Added ${values.pl_account_number}`);
       addAccountForm.resetFields();
       loadPlAccounts();
     } catch (e) {
@@ -418,7 +433,18 @@ export default function BankAccount() {
       title: 'Account No.',
       dataIndex: 'account_number',
       key: 'account_number',
-      width: 100,
+      width: 120,
+      render: (num, record) => (
+        <Input
+          size="small"
+          defaultValue={num}
+          onBlur={(e) => handleChangeAccountNumber(record.account_number, e.target.value)}
+          onPressEnter={(e) => {
+            handleChangeAccountNumber(record.account_number, e.target.value);
+            e.target.blur();
+          }}
+        />
+      ),
     },
     {
       title: 'Description',
@@ -454,19 +480,6 @@ export default function BankAccount() {
           style={{ width: 115 }}
           onChange={(val) => handleChangeCategory(record.account_number, val)}
           options={CATEGORY_OPTIONS}
-        />
-      ),
-    },
-    {
-      title: 'Active',
-      dataIndex: 'is_active',
-      key: 'is_active',
-      width: 60,
-      render: (val, record) => (
-        <Switch
-          size="small"
-          checked={val}
-          onChange={(checked) => handleToggleActive(record.account_number, checked)}
         />
       ),
     },
@@ -605,6 +618,16 @@ export default function BankAccount() {
                 }
                 options={accountNumbers.map(acc => ({ value: acc, label: acc }))}
               />
+              <DatePicker
+                placeholder="From"
+                value={dateFrom}
+                onChange={(d) => { setDateFrom(d); setPage(1); }}
+              />
+              <DatePicker
+                placeholder="To"
+                value={dateTo}
+                onChange={(d) => { setDateTo(d); setPage(1); }}
+              />
             </Space>
             <Space>
               <Button
@@ -638,7 +661,7 @@ export default function BankAccount() {
                   Đang sort theo: <strong>{sortColumn}</strong> ({sortOrder === 'asc' ? 'Tăng dần' : 'Giảm dần'})
                 </span>
               )}
-              {(searchText || sortColumn || accountNumber) && (
+              {(searchText || sortColumn || accountNumber || dateFrom || dateTo) && (
                 <Button size="small" icon={<ClearOutlined />} onClick={clearFilters}>
                   Xóa bộ lọc
                 </Button>
@@ -685,7 +708,7 @@ export default function BankAccount() {
         </Text>
         <Form form={addAccountForm} layout="inline" style={{ marginBottom: 16, flexWrap: 'wrap', gap: 4 }}>
           <Form.Item
-            name="account_number"
+            name="pl_account_number"
             rules={[{ required: true, message: 'Required' }]}
             style={{ marginBottom: 4 }}
           >

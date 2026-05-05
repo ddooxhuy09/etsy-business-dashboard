@@ -3,11 +3,11 @@ New vs Returning Customer Sales Chart - REFACTORED
 Uses shared utilities to eliminate code duplication
 """
 from ._streamlit_shim import st  # noqa: F401
-from shared.query_utils.chart_helpers import (
+from core.query_utils.chart_helpers import (
     execute_chart_query,
     render_chart_description
 )
-from shared.query_utils.query_builder import build_standard_filters
+from core.query_utils.query_builder import build_standard_filters
 
 
 def get_new_vs_returning_customer_sales(start_date: str = None, end_date: str = None, customer_type: str = 'all'):
@@ -15,23 +15,24 @@ def get_new_vs_returning_customer_sales(start_date: str = None, end_date: str = 
     sql = """
     SELECT 
         CASE WHEN customer_orders.order_count = 1 THEN 'New Customers' ELSE 'Returning Customers' END as "Customer Type",
-        ROUND(SUM(COALESCE(fs.item_total, 0) - COALESCE(fs.discount_amount, 0)), 2) as "Revenue (USD)" 
-    FROM fact_sales fs 
-    JOIN dim_time dtime ON fs.sale_date_key = dtime.time_key
+        ROUND(SUM(COALESCE(fs.item_total, 0) - COALESCE(fo.discount_amount, 0)), 2) as "Revenue (USD)" 
+    FROM fact_order_items fs 
+    JOIN fact_orders fo ON fs.order_key = fo.order_key
+    JOIN dim_time dtime ON fo.sale_date_key = dtime.date_key
     JOIN (
-        SELECT customer_key, COUNT(DISTINCT order_key) as order_count 
-        FROM fact_sales 
-        GROUP BY customer_key
-    ) customer_orders ON fs.customer_key = customer_orders.customer_key
+        SELECT fo2.customer_key, COUNT(DISTINCT fo2.order_key) as order_count 
+        FROM fact_orders fo2
+        GROUP BY fo2.customer_key
+    ) customer_orders ON fo.customer_key = customer_orders.customer_key
     WHERE 1=1
     """
     
-    filter_sql, params = build_standard_filters(start_date, end_date, customer_type, 'fs', 'dtime.full_date')
+    filter_sql, params = build_standard_filters(start_date, end_date, customer_type, 'fs', 'dtime.date_key')
     sql += filter_sql
     
     sql += """
     GROUP BY 1
-    ORDER BY SUM(COALESCE(fs.item_total, 0) - COALESCE(fs.discount_amount, 0)) DESC
+    ORDER BY SUM(COALESCE(fs.item_total, 0) - COALESCE(fo.discount_amount, 0)) DESC
     """
     
     return execute_chart_query(sql, tuple(params) if params else None)

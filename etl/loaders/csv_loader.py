@@ -101,7 +101,6 @@ class CSVLoader:
             "EtsyDirectCheckoutPayments": "direct_checkout",
             "fact_bank_transactions.csv": "bank_transactions",
             "product_catalog.csv": "product_catalog",
-            "dim_bank_account.csv": "dim_bank_account",
         }
         
         csv_files = self.list_available_files()
@@ -161,7 +160,6 @@ class CSVLoader:
             "direct_checkout": "EtsyDirectCheckoutPayments",
             "bank_transactions": "fact_bank_transactions.csv",
             "product_catalog": "product_catalog.csv",
-            "dim_bank_account": "dim_bank_account.csv",
         }
         pattern = dataset_to_pattern.get(dataset_name)
         if not pattern:

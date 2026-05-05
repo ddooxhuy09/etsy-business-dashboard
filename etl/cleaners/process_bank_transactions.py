@@ -7,27 +7,61 @@ import pandas as pd
 import numpy as np
 import re
 import logging
+from typing import Optional, Set
 
 from config import DATE_FORMATS
 from etl.utils_core import (
     clean_date_to_yyyymmdd, 
     setup_logging, 
     convert_columns_to_snake_case,
-    ensure_proper_data_types
+    ensure_proper_data_types,
+    ensure_text_ids
 )
 
 
-def parse_description(description: str) -> dict:
+def get_allowed_pl_accounts() -> Set[str]:
+    """Load valid PL account numbers from dim_pl_accounts."""
+    logger = setup_logging()
+    try:
+        from core.database import run_query
+
+        df = run_query(
+            "SELECT pl_account_number FROM dim_pl_accounts WHERE pl_account_number IS NOT NULL",
+            None,
+        )
+    except Exception as e:
+        logger.warning(f"Could not load PL accounts from dim_pl_accounts: {e}")
+        return set()
+
+    if df is None or df.empty or 'pl_account_number' not in df.columns:
+        logger.warning("No PL accounts found in dim_pl_accounts")
+        return set()
+
+    return {
+        str(value).strip().upper()
+        for value in df['pl_account_number'].dropna()
+        if str(value).strip()
+    }
+
+
+def parse_description(description: str, allowed_pl_accounts: Optional[Set[str]] = None) -> dict:
     """
-    Parse description to extract product information and pl_account_number
-    
-    Pattern (expanded): {Product line ID}_{Product ID}_{Variant ID} [pl_account_number]
-    - Product line / Product ID / Variant ID: chuỗi chữ hoặc số (ví dụ: DEF_MG01107417_03 hoặc 1_1_1)
-    - PL account (tùy chọn): 4 digits (e.g., 6221)
-    Ví dụ:
-      "DEF_MG01107417_03 6221 Ck mua yarn..."
-      "1_1_1"
-    
+    Parse description to extract product information and pl_account_number.
+
+    Supported formats:
+      Case A — 3 segments, 3rd is PL account (no variant):
+        "GEMIMI_DH69251_6414 mua tool..."
+        → product_line=GEMIMI, product=DH69251, variant=None, pl=6414
+
+      Case B — 3 segments + 4th PL account via underscore or space:
+        "DEF_MG01107417_03 6221 Ck mua yarn..."
+        "TBL_BLO_TO01_6222 chart ..."
+        → product_line=DEF, product=MG01107417, variant=03, pl=6221
+
+      Case C — 3 segments only, no PL account:
+        "1_1_1"
+        → product_line=1, product=1, variant=1, pl=None
+
     Returns dict with: pl_account_number, parsed_product_line_id, parsed_product_id, parsed_variant_id
     """
     result = {
@@ -36,35 +70,33 @@ def parse_description(description: str) -> dict:
         'parsed_product_id': None,
         'parsed_variant_id': None
     }
-    
+
     if description is None or (isinstance(description, float) and pd.isna(description)) or not isinstance(description, str):
         return result
-    
-    # Chỉ chấp nhận một số PL account nhất định (các TK chi phí/cogs hợp lệ)
-    ALLOWED_PL_ACCOUNTS = {
-        "6211", "6221", "6222", "6223", "6224", "6225",
-        "6273",
-        "6411", "6412", "6413", "6414",
-        "6421", "6428",
-    }
 
-    # Hỗ trợ cả:
-    # - "DEF_MG01107417_03 6221 ..."
-    # - "TBL_BLO_TO01_6222 chart ..."
-    # → tức là PL account có thể đứng sau khoảng trắng hoặc thêm một dấu "_" nữa.
+    if allowed_pl_accounts is None:
+        allowed_pl_accounts = get_allowed_pl_accounts()
+
     pattern = r'([A-Z0-9]+)_([A-Z0-9]+)_([A-Z0-9]+)(?:[_\s]+(\d{4}))?'
     match = re.search(pattern, description, flags=re.IGNORECASE)
-    
+
     if match:
+        seg3 = match.group(3).upper()
+        seg4 = match.group(4)  # may be None
+
         result['parsed_product_line_id'] = match.group(1).upper()
         result['parsed_product_id'] = match.group(2).upper()
-        result['parsed_variant_id'] = match.group(3)
-        if match.group(4):
-            pl_acc = match.group(4)
-            # Chỉ nhận các PL account thuộc whitelist, còn lại bỏ qua (None)
-            if pl_acc in ALLOWED_PL_ACCOUNTS:
-                result['pl_account_number'] = pl_acc
-    
+
+        if seg3 in allowed_pl_accounts:
+            # Case A: 3rd segment IS the PL account number — no variant
+            result['pl_account_number'] = seg3
+            result['parsed_variant_id'] = None
+        else:
+            # Case B/C: 3rd segment is the variant
+            result['parsed_variant_id'] = seg3
+            if seg4 and seg4 in allowed_pl_accounts:
+                result['pl_account_number'] = seg4
+
     return result
 
 
@@ -83,7 +115,9 @@ def clean_bank_transactions_data(df: pd.DataFrame) -> pd.DataFrame:
     logger.info("🔍 Parsing Description column for product information...")
     # Find the Description column (it has Vietnamese characters)
     desc_col = [col for col in df_clean.columns if 'Description' in col][0]
-    parsed_data = df_clean[desc_col].apply(parse_description)
+    allowed_pl_accounts = get_allowed_pl_accounts()
+    logger.info(f"Loaded {len(allowed_pl_accounts)} PL accounts from dim_pl_accounts")
+    parsed_data = df_clean[desc_col].apply(lambda value: parse_description(value, allowed_pl_accounts))
     parsed_df = pd.DataFrame(parsed_data.tolist())
     
     # Add parsed columns to dataframe
@@ -96,10 +130,21 @@ def clean_bank_transactions_data(df: pd.DataFrame) -> pd.DataFrame:
     logger.info("📝 Converting column names to snake_case...")
     df_clean = convert_columns_to_snake_case(df_clean)
     
+    # Translate columns from Vietnamese to standard English
+    col_mapping = {
+        'phat_sinh_co': 'credit_amount',
+        'phat_sinh_no': 'debit_amount',
+        'so_du': 'balance',
+        'phat_sinh_co_credit_amount': 'credit_amount',
+        'phat_sinh_no_debit_amount': 'debit_amount',
+        'so_du_balance': 'balance'
+    }
+    df_clean = df_clean.rename(columns=col_mapping)
+    
     # Clean date columns - convert to yyyyMMdd format
     # Bank transactions use format: dd/mm/yyyy (e.g., 01/01/2024)
     date_format = "%d/%m/%Y"
-    date_columns = ['ngay_gd_transaction_date', 'ngay_mo_tai_khoan_opening_date']
+    date_columns = ['ngay_gd_transaction_date', 'ngay_mo_tai_khoan_opening_date', 'ngay_gd', 'ngay_mo_tai_khoan']
     for col in date_columns:
         if col in df_clean.columns:
             logger.info(f"📅 Cleaning date column: {col}")
@@ -107,19 +152,22 @@ def clean_bank_transactions_data(df: pd.DataFrame) -> pd.DataFrame:
     
     # Clean numeric columns (amounts and balance)
     numeric_columns = [
-        'phat_sinh_co_credit_amount',
-        'phat_sinh_no_debit_amount',
-        'so_du_balance'
+        'credit_amount',
+        'debit_amount',
+        'balance'
     ]
     
     for col in numeric_columns:
         if col in df_clean.columns:
             logger.info(f"💰 Cleaning numeric column: {col}")
+            df_clean[col] = df_clean[col].astype(str).str.replace(',', '', regex=False)
             df_clean[col] = pd.to_numeric(df_clean[col], errors='coerce')
+            df_clean[col] = df_clean[col] / 24874
     
     # Ensure proper data types
     logger.info("✅ Ensuring proper data types...")
     df_clean = ensure_proper_data_types(df_clean, 'bank_transactions')
+    df_clean = ensure_text_ids(df_clean)
     
     # Log summary
     logger.info(f"✅ Cleaned {len(df_clean):,} bank transaction records")
@@ -156,4 +204,3 @@ def process_bank_transactions(df: pd.DataFrame) -> pd.DataFrame:
     logger.info("=" * 70)
     
     return df_processed
-

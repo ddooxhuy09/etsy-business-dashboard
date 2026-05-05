@@ -9,7 +9,8 @@ from config import DATE_FORMATS, DATA_FILES, EXCHANGE_RATE
 from etl.utils_core import (
     clean_date_to_yyyymmdd, 
     clean_currency_amount, 
-    setup_logging, convert_columns_to_snake_case, ensure_proper_data_types
+    setup_logging, convert_columns_to_snake_case, ensure_proper_data_types,
+    ensure_text_ids
 )
 
 def clean_sold_orders_data(df: pd.DataFrame) -> pd.DataFrame:
@@ -43,7 +44,7 @@ def clean_sold_orders_data(df: pd.DataFrame) -> pd.DataFrame:
         columns_to_convert = ['Card Processing Fees', 'Order Net']
         for col in columns_to_convert:
             if col in df_clean.columns:
-                df_clean[col] = (df_clean[col] * 100 / EXCHANGE_RATE).round(2)
+                df_clean[col] = (df_clean[col] * 100 / 24847)
     except Exception as e:
         logger.warning(f"Could not convert to USD: {e}")
     
@@ -76,6 +77,7 @@ def clean_sold_orders_data(df: pd.DataFrame) -> pd.DataFrame:
     
     # Ensure proper data types for Parquet
     df_clean = ensure_proper_data_types(df_clean, 'sold_orders')
+    df_clean = ensure_text_ids(df_clean)
     
     logger.info(f"✅ Cleaned {len(df_clean)} sold orders records")
     return df_clean

@@ -10,7 +10,7 @@ from fastapi import APIRouter, File, UploadFile, HTTPException, Body
 from typing import Optional
 from pydantic import BaseModel
 
-from shared.db import run_query, execute_query, get_database_url
+from core.database import run_query, execute_query, get_database_url
 from etl.cleaners.process_product_catalog import clean_product_catalog_data
 from etl.expected_columns import validate_columns, get_raw_columns_list
 
@@ -90,7 +90,7 @@ async def upload_product_catalog(file: UploadFile = File(...)):
         import psycopg2
         from psycopg2.extras import execute_values
 
-        cols = ["product_line_id", "product_id", "variant_id", "product_line_name", "product_name", "variant_name"]
+        cols = ["product_line_id", "product_id", "variant_id", "product_line", "product", "variants"]
         for c in cols:
             if c not in df_clean.columns:
                 df_clean[c] = None
@@ -105,16 +105,16 @@ async def upload_product_catalog(file: UploadFile = File(...)):
                         df_upsert["product_line_id"].tolist(),
                         df_upsert["product_id"].tolist(),
                         df_upsert["variant_id"].tolist(),
-                        df_upsert["product_line_name"].tolist(),
-                        df_upsert["product_name"].tolist(),
-                        df_upsert["variant_name"].tolist(),
+                        df_upsert["product_line"].tolist(),
+                        df_upsert["product"].tolist(),
+                        df_upsert["variants"].tolist(),
                     ))
                     execute_values(
                         cur,
                         """
-                        INSERT INTO dim_product_catalog (
+                        INSERT INTO dim_product_line (
                             product_line_id, product_id, variant_id,
-                            product_line_name, product_name, variant_name
+                            product_line, product, variants
                         )
                         VALUES %s
                         ON CONFLICT (product_line_id, product_id, variant_id)
@@ -150,9 +150,9 @@ class ProductCatalogRow(BaseModel):
     product_line_id: str
     product_id: str
     variant_id: str
-    product_line_name: Optional[str] = None
-    product_name: Optional[str] = None
-    variant_name: Optional[str] = None
+    product_line: Optional[str] = None
+    product: Optional[str] = None
+    variants: Optional[str] = None
 
 
 @router.post("/product-catalog/import-row")
@@ -160,31 +160,29 @@ def import_product_catalog_row(row: ProductCatalogRow):
     """Import a single product catalog row."""
     try:
         existing = run_query("""
-            SELECT product_catalog_key FROM dim_product_catalog
+            SELECT dim_product_line_key FROM dim_product_line
             WHERE product_line_id = %s AND product_id = %s AND variant_id = %s
         """, (row.product_line_id, row.product_id, row.variant_id))
 
         if not existing.empty:
             execute_query("""
-                UPDATE dim_product_catalog
-                SET product_line_name = %s, product_name = %s, variant_name = %s,
-                    updated_date = CURRENT_TIMESTAMP
+                UPDATE dim_product_line
+                SET product_line = %s, product = %s, variants = %s
                 WHERE product_line_id = %s AND product_id = %s AND variant_id = %s
             """, (
-                row.product_line_name, row.product_name, row.variant_name,
+                row.product_line, row.product, row.variants,
                 row.product_line_id, row.product_id, row.variant_id
             ))
             return {"ok": True, "message": "Updated existing row", "action": "update"}
         else:
             execute_query("""
-                INSERT INTO dim_product_catalog (
+                INSERT INTO dim_product_line (
                     product_line_id, product_id, variant_id,
-                    product_line_name, product_name, variant_name,
-                    created_date, updated_date
-                ) VALUES (%s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                    product_line, product, variants
+                ) VALUES (%s, %s, %s, %s, %s, %s)
             """, (
                 row.product_line_id, row.product_id, row.variant_id,
-                row.product_line_name, row.product_name, row.variant_name
+                row.product_line, row.product, row.variants
             ))
             return {"ok": True, "message": "Inserted new row", "action": "insert"}
     except Exception as e:

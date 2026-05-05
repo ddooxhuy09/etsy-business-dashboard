@@ -28,17 +28,14 @@ class BaseBuilder:
             'product_key': 1,
             'customer_key': 1, 
             'order_key': 1,
-            'geography_key': 1,
-            'payment_key': 1
+            'product_line_key': 1,
         }
         
-        # Master data lookups for referential integrity
         self.master_keys = {
             'products': {},      # listing_id -> product_key
-            'customers': {},     # buyer_user_id -> customer_key
+            'customers': {},     # buyer_user_name -> customer_key
             'orders': {},        # order_id -> order_key
-            'geographies': {},   # location_hash -> geography_key
-            'payments': {}       # payment_method -> payment_key
+            'product_lines': {}, # composite_key -> dim_product_line_key
         }
 
     def _parse_comma_separated(self, text) -> List[str]:

@@ -19,7 +19,7 @@ if not getattr(sys, "frozen", False) and str(get_app_root()) not in sys.path:
 from pipelines.run_etl import run_etl as run_etl_pipeline
 from etl.expected_columns import validate_columns, RAW_COLUMNS_BY_KEY
 from config import get_available_raw_periods, get_period_for_date, parse_period
-from shared.storage import (
+from core.storage import (
     upload_file_to_storage,
     file_exists_in_storage,
     delete_file_from_storage,
@@ -28,6 +28,8 @@ from shared.storage import (
     list_files_in_folder,
     list_all_periods,
     add_period_to_list,
+    read_periods_data,
+    write_periods_data,
     verify_supabase_setup
 )
 
@@ -99,33 +101,32 @@ def verify_storage_setup():
     return verify_supabase_setup()
 
 
+def _update_period_metadata(period: str, **kwargs) -> None:
+    """
+    Update cached metadata for a single period in periods.json.
+    kwargs: etl_done_at=..., file_count=...  (only provided keys are updated)
+    """
+    try:
+        data = read_periods_data()
+        periods = data["periods"]
+        metadata = data["metadata"]
+        if period not in periods:
+            periods = sorted(set(periods) | {period})
+        entry = metadata.get(period, {})
+        entry.update(kwargs)
+        metadata[period] = entry
+        write_periods_data(periods, metadata)
+    except Exception as e:
+        print(f"Warning: failed to update period metadata for {period}: {e}")
+
+
 @router.get("/periods")
 def list_periods():
-    """List period folders in Supabase Storage bucket (YYYY-MM format)."""
-    periods_list = list_all_periods()
-
-    if not periods_list:
-        return {"periods": [], "metadata": {}}
-
-    result = []
-    for p in periods_list:
-        try:
-            year, month = parse_period(p)
-            etl = _read_etl_status(year, month)
-            snapshot = _get_file_snapshot(year, month)
-            file_count = len([k for k, files in snapshot.items() if files])
-            result.append({
-                "period": p,
-                "etl_done_at": etl.get("etl_done_at") if etl else None,
-                "file_count": file_count,
-            })
-        except Exception:
-            pass
-
-    return {
-        "periods": [r["period"] for r in result],
-        "metadata": {r["period"]: {"etl_done_at": r["etl_done_at"], "file_count": r["file_count"]} for r in result}
-    }
+    """List period folders in Supabase Storage bucket (YYYY-MM format).
+    Fast path: reads only periods.json (1 Storage request).
+    """
+    data = read_periods_data()
+    return {"periods": data["periods"], "metadata": data["metadata"]}
 
 
 def _is_valid_period_format(folder_name: str) -> bool:
@@ -155,6 +156,9 @@ def create_period(
                 print(f"Successfully created manifest for {period}")
             else:
                 print(f"Failed to create manifest for {period}")
+
+        # Initialize metadata cache for new period (0 files, no ETL yet)
+        _update_period_metadata(period, file_count=0, etl_done_at=None)
 
         periods = list_all_periods()
         if period not in periods:
@@ -372,6 +376,9 @@ async def upload(
             new_entry = {"filename": s["filename"], "size": s["size"], "uploaded_at": t}
             m[s["key"]] = prev + [new_entry]
         _write_manifest(year, month, m)
+        # Update cached file_count in periods.json
+        file_count = len([k for k in m if _manifest_entries(m.get(k))])
+        _update_period_metadata(_period(year, month), file_count=file_count)
 
     return {"period": _period(year, month), "saved": saved, "validation": validation}
 
@@ -408,6 +415,10 @@ def delete_file(
     etl_status_path = f"{period}/{ETL_STATUS_FILENAME}"
     delete_file_from_storage(etl_status_path)
 
+    # Update cached metadata: reset etl_done_at (files changed), refresh file_count
+    file_count = len([k for k in man if _manifest_entries(man.get(k))])
+    _update_period_metadata(period, file_count=file_count, etl_done_at=None)
+
     return {"ok": True, "message": f"Đã xóa file {filename}"}
 
 
@@ -440,7 +451,10 @@ def run_etl_endpoint(
     try:
         r = run_etl_pipeline(period=period, clean_existing=True, raw_base=None)
         if r.get("ok"):
-            _write_etl_status(year, month, datetime.now(timezone.utc).isoformat(), current)
+            etl_done_at = datetime.now(timezone.utc).isoformat()
+            _write_etl_status(year, month, etl_done_at, current)
+            # Update cached etl_done_at in periods.json
+            _update_period_metadata(period, etl_done_at=etl_done_at)
         return r
     except Exception as e:
         return {"ok": False, "message": str(e), "stdout": "", "stderr": ""}

@@ -5,6 +5,7 @@ import api from '../lib/axios';
 import { fetchProfitLossSummaryTable } from '../api/profitLoss';
 import TableColumnTitle from '../components/TableColumnTitle';
 import { PROFIT_LOSS_COLUMN_ANNOTATIONS } from '../constants/tableColumnAnnotations';
+import { useCurrency } from '../contexts/CurrencyContext';
 import '../styles/profitLoss.css';
 
 const viewModes = [
@@ -85,12 +86,6 @@ const LINE_ITEM_PL_ACCOUNTS = {
   'Chi phí nhân viên marketing - đăng và quản lí kênh (Chi phí quản lý doanh nghiệp)': ['6428'],
 };
 
-function fmt(v) {
-  if (v == null || (typeof v === 'number' && isNaN(v))) return '—';
-  if (typeof v !== 'number') return String(v);
-  return v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
-
 function isChildHidden(lineItem, expanded) {
   if (ETSY_CHILDREN.includes(lineItem) && !expanded.etsy) return true;
   if (VAT_CHILDREN.includes(lineItem) && !expanded.vat) return true;
@@ -99,6 +94,7 @@ function isChildHidden(lineItem, expanded) {
 }
 
 export default function ProfitLossStatement() {
+  const { fmt } = useCurrency();
   const [startDate, setStartDate] = useState(null);
   const [endDate, setEndDate] = useState(null);
   const [viewMode, setViewMode] = useState('month');

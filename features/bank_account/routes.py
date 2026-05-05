@@ -5,7 +5,7 @@ import math
 import pandas as pd
 from fastapi import APIRouter, Query, Body, HTTPException
 
-from shared.db import run_query, execute_query
+from core.database import run_query, execute_query
 
 router = APIRouter(prefix="/api/static", tags=["bank-account"])
 
@@ -34,6 +34,8 @@ def get_bank_transactions(
     sort_by: str = Query(None, description="Column to sort by"),
     sort_order: str = Query("desc", description="asc or desc"),
     account_number: str = Query(None, description="Filter by account number"),
+    date_from: str = Query(None, description="Filter from date (YYYY-MM-DD)"),
+    date_to: str = Query(None, description="Filter to date (YYYY-MM-DD)"),
 ):
     """Get bank transactions data from fact_bank_transactions table."""
     where_conditions = []
@@ -42,6 +44,14 @@ def get_bank_transactions(
     if account_number:
         where_conditions.append("fbt.account_number = %s")
         params.append(account_number)
+
+    if date_from:
+        where_conditions.append("fbt.transaction_date >= %s")
+        params.append(date_from)
+
+    if date_to:
+        where_conditions.append("fbt.transaction_date <= %s")
+        params.append(date_to)
 
     if search:
         search_conditions = []
@@ -56,49 +66,45 @@ def get_bank_transactions(
     order_clause = ""
     if sort_by:
         valid_cols = ["transaction_date", "reference_number", "account_number",
-                     "credit_amount", "debit_amount", "balance_after_transaction",
+                     "credit_amount", "debit_amount", "balance",
                      "transaction_description", "pl_account_number"]
         if sort_by in valid_cols:
             if sort_by == "transaction_date":
-                order_clause = "ORDER BY dt.full_date"
+                order_clause = "ORDER BY fbt.transaction_date"
             else:
                 order_clause = f'ORDER BY fbt.{sort_by}'
             order_clause += " DESC" if sort_order and sort_order.lower() == "desc" else " ASC"
     else:
-        order_clause = "ORDER BY dt.full_date DESC, fbt.bank_transaction_key DESC"
+        order_clause = "ORDER BY fbt.transaction_date DESC, fbt.bank_transaction_key DESC"
 
     query = f"""
         SELECT
             fbt.bank_transaction_key,
-            dt.full_date AS transaction_date,
+            fbt.transaction_date,
             fbt.reference_number,
             fbt.account_number,
-            dba.account_name,
+            fbt.account_name,
             fbt.transaction_description,
             fbt.pl_account_number,
             fbt.parsed_product_line_id,
             fbt.parsed_product_id,
             fbt.parsed_variant_id,
-            COALESCE(dpc.product_line_name, dpc2.product_line_name) AS product_line_name,
-            COALESCE(dpc.product_name, dpc2.product_name) AS product_name,
-            COALESCE(dpc.variant_name, dpc2.variant_name) AS variant_name,
+            COALESCE(dpl.product_line, dpl2.product_line, fbt.parsed_product_line_id) AS product_line_name,
+            COALESCE(dpl.product, dpl2.product, fbt.parsed_product_id) AS product_name,
+            COALESCE(dpl.variants, dpl2.variants, fbt.parsed_variant_id) AS variant_name,
             COALESCE(fbt.credit_amount, 0) AS credit_amount,
             COALESCE(fbt.debit_amount, 0) AS debit_amount,
-            fbt.balance_after_transaction,
-            fbt.is_business_related,
-            fbt.data_source,
-            fbt.batch_id
+            fbt.balance,
+            (fbt.parsed_product_line_id IS NOT NULL) AS is_business_related
         FROM fact_bank_transactions fbt
-        LEFT JOIN dim_time dt ON fbt.transaction_date_key = dt.time_key
-        LEFT JOIN dim_bank_account dba ON fbt.bank_account_key = dba.bank_account_key
-        LEFT JOIN dim_product_catalog dpc ON fbt.product_catalog_key = dpc.product_catalog_key
-        LEFT JOIN dim_product_catalog dpc2 ON
+        LEFT JOIN dim_product_line dpl ON FALSE
+        LEFT JOIN dim_product_line dpl2 ON
             fbt.parsed_product_line_id IS NOT NULL
             AND fbt.parsed_product_id IS NOT NULL
             AND fbt.parsed_variant_id IS NOT NULL
-            AND fbt.parsed_product_line_id = dpc2.product_line_id
-            AND fbt.parsed_product_id = dpc2.product_id
-            AND fbt.parsed_variant_id = dpc2.variant_id
+            AND fbt.parsed_product_line_id = dpl2.product_line_id
+            AND fbt.parsed_product_id = dpl2.product_id
+            AND fbt.parsed_variant_id = dpl2.variant_id
         {where_clause}
         {order_clause}
         LIMIT %s OFFSET %s
@@ -125,12 +131,25 @@ def get_bank_transactions(
 
 
 @router.get("/bank-transactions/count")
-def get_bank_transactions_count(account_number: str = Query(None)):
+def get_bank_transactions_count(
+    account_number: str = Query(None),
+    date_from: str = Query(None, description="Filter from date (YYYY-MM-DD)"),
+    date_to: str = Query(None, description="Filter to date (YYYY-MM-DD)"),
+):
     """Get total count of bank transactions."""
+    where_conditions = []
+    params = []
     if account_number:
-        df = run_query("SELECT COUNT(*) as total FROM fact_bank_transactions WHERE account_number = %s", (account_number,))
-    else:
-        df = run_query("SELECT COUNT(*) as total FROM fact_bank_transactions")
+        where_conditions.append("account_number = %s")
+        params.append(account_number)
+    if date_from:
+        where_conditions.append("transaction_date >= %s")
+        params.append(date_from)
+    if date_to:
+        where_conditions.append("transaction_date <= %s")
+        params.append(date_to)
+    where_clause = "WHERE " + " AND ".join(where_conditions) if where_conditions else ""
+    df = run_query(f"SELECT COUNT(*) as total FROM fact_bank_transactions {where_clause}", tuple(params) if params else None)
     total = int(df["total"].iloc[0]) if not df.empty else 0
     return {"total": total}
 

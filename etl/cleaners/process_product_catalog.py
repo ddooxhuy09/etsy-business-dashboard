@@ -11,37 +11,36 @@ product_code được tính trong DB: (product_line_id || '_' || product_id || '
 import pandas as pd
 import logging
 
-from etl.utils_core import setup_logging, clean_text_field
+from etl.utils_core import setup_logging, clean_text_field, ensure_text_ids
 
 # Map normalized (lowercase + strip) raw column name → dim column name
 # Hỗ trợ cả format cũ (Product line, Product, Variants)
 # và format mới (Product Line Name, Product Name, Variant Name)
 _NORM_COLUMN_MAP = {
-    "product line id":   "product_line_id",    # VARCHAR(50)
-    "product line name": "product_line_name",  # VARCHAR(200) — new format
-    "product line":      "product_line_name",  # VARCHAR(200) — legacy alias
-    "product id":        "product_id",         # VARCHAR(50)
-    "product name":      "product_name",       # VARCHAR(200) — new format
-    "product":           "product_name",       # VARCHAR(200) — legacy alias
-    "variant id":        "variant_id",         # VARCHAR(50)
-    "variant name":      "variant_name",       # VARCHAR(200) — new format
-    "variants":          "variant_name",       # VARCHAR(200) — legacy alias
+    "product line id":   "product_line_id",
+    "product line name": "product_line",
+    "product line":      "product_line",
+    "product id":        "product_id",
+    "product name":      "product",
+    "product":           "product",
+    "variant id":        "variant_id",
+    "variant name":      "variants",
+    "variants":          "variants",
 }
 
 OUTPUT_COLS = [
-    "product_line_id", "product_line_name",
-    "product_id", "product_name",
-    "variant_id", "variant_name",
+    "product_line_id", "product_line",
+    "product_id", "product",
+    "variant_id", "variants",
 ]
 
-# Keep COLUMN_MAP alias for backward compatibility
 COLUMN_MAP = {
     "Product line ID": "product_line_id",
-    "Product line": "product_line_name",
+    "Product line": "product_line",
     "Product ID": "product_id",
-    "Product": "product_name",
+    "Product": "product",
     "Variant ID": "variant_id",
-    "Variants": "variant_name",
+    "Variants": "variants",
 }
 
 
@@ -82,7 +81,7 @@ def clean_product_catalog_data(df: pd.DataFrame) -> pd.DataFrame:
         out[col] = out[col].apply(lambda x: clean_text_field(x, 50) if (pd.notna(x) and str(x).strip()) else None)
 
     # 4. Chuẩn hóa tên (VARCHAR 200)
-    for col in ["product_line_name", "product_name", "variant_name"]:
+    for col in ["product_line", "product", "variants"]:
         out[col] = out[col].apply(lambda x: clean_text_field(x, 200) if pd.notna(x) else None)
 
     # 5. Bỏ dòng thiếu natural key (product_line_id, product_id, variant_id NOT NULL)
@@ -94,6 +93,7 @@ def clean_product_catalog_data(df: pd.DataFrame) -> pd.DataFrame:
 
     # 6. Bỏ trùng theo natural key (khớp constraint uq_product_catalog_natural_key)
     out = out.drop_duplicates(subset=["product_line_id", "product_id", "variant_id"], keep="first")
+    out = ensure_text_ids(out)
     logger.info(f"✅ product_catalog: {len(out):,} rows (product_code do DB generate)")
 
     return out[OUTPUT_COLS]

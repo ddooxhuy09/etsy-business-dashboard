@@ -6,8 +6,8 @@ from ._streamlit_shim import st  # noqa: F401
 import pandas as pd
 from datetime import datetime
 import textwrap
-from shared.query_utils.chart_helpers import execute_chart_query
-from shared.query_utils.db_query import execute_query
+from core.query_utils.chart_helpers import execute_chart_query
+from core.query_utils.db_query import execute_query
 
 
 def get_revenue_comparison_by_month(month1_year, month1_month, month2_year, month2_month):
@@ -24,7 +24,6 @@ def get_revenue_comparison_by_month(month1_year, month1_month, month2_year, mont
         DataFrame with revenue data for both months
     """
 
-    # Calculate start and end dates for both months
     month1_start = datetime(month1_year, month1_month, 1).date()
     if month1_month == 12:
         month1_end = datetime(month1_year + 1, 1, 1).date() - pd.Timedelta(days=1)
@@ -37,29 +36,30 @@ def get_revenue_comparison_by_month(month1_year, month1_month, month2_year, mont
     else:
         month2_end = datetime(month2_year, month2_month + 1, 1).date() - pd.Timedelta(days=1)
 
-    # SQL query for daily revenue comparison between two months
     sql = """
     WITH month1_daily AS (
         SELECT 
-            dt.full_date as date,
-            ROUND(COALESCE(SUM(COALESCE(fs.item_total, 0) - COALESCE(fs.discount_amount, 0)), 0), 2) as revenue,
+            dt.date_key as date,
+            ROUND(COALESCE(SUM(COALESCE(fs.item_total, 0) - COALESCE(fo.discount_amount, 0)), 0), 2) as revenue,
             'Month 1' as month_label,
             dt.day_of_month as day_of_month
-        FROM fact_sales fs 
-        JOIN dim_time dt ON fs.sale_date_key = dt.time_key
-        WHERE dt.full_date >= %s AND dt.full_date <= %s
-        GROUP BY dt.full_date, dt.day_of_month
+        FROM fact_order_items fs 
+        JOIN fact_orders fo ON fs.order_key = fo.order_key
+        JOIN dim_time dt ON fo.sale_date_key = dt.date_key
+        WHERE dt.date_key >= %s AND dt.date_key <= %s
+        GROUP BY dt.date_key, dt.day_of_month
     ),
     month2_daily AS (
         SELECT 
-            dt.full_date as date,
-            ROUND(COALESCE(SUM(COALESCE(fs.item_total, 0) - COALESCE(fs.discount_amount, 0)), 0), 2) as revenue,
+            dt.date_key as date,
+            ROUND(COALESCE(SUM(COALESCE(fs.item_total, 0) - COALESCE(fo.discount_amount, 0)), 0), 2) as revenue,
             'Month 2' as month_label,
             dt.day_of_month as day_of_month
-        FROM fact_sales fs 
-        JOIN dim_time dt ON fs.sale_date_key = dt.time_key
-        WHERE dt.full_date >= %s AND dt.full_date <= %s
-        GROUP BY dt.full_date, dt.day_of_month
+        FROM fact_order_items fs 
+        JOIN fact_orders fo ON fs.order_key = fo.order_key
+        JOIN dim_time dt ON fo.sale_date_key = dt.date_key
+        WHERE dt.date_key >= %s AND dt.date_key <= %s
+        GROUP BY dt.date_key, dt.day_of_month
     )
     SELECT 
         date as "Date",
@@ -89,9 +89,10 @@ def get_month_aggregates(month_start, month_end):
     """Return aggregates for a month: orders_count, revenue, profit."""
     orders_sql = """
     SELECT COUNT(DISTINCT fs.order_key) AS orders_count
-    FROM fact_sales fs
-    JOIN dim_time dt ON fs.sale_date_key = dt.time_key
-    WHERE dt.full_date >= %s AND dt.full_date <= %s
+    FROM fact_order_items fs
+    JOIN fact_orders fo ON fs.order_key = fo.order_key
+    JOIN dim_time dt ON fo.sale_date_key = dt.date_key
+    WHERE dt.date_key >= %s AND dt.date_key <= %s
     """
     orders_df = execute_query(orders_sql, (month_start, month_end))
     orders_count = int(orders_df.iloc[0, 0]) if not orders_df.empty else 0
@@ -101,8 +102,8 @@ def get_month_aggregates(month_start, month_end):
         COALESCE(SUM(COALESCE(fp.gross_amount, 0)), 0) AS revenue,
         COALESCE(SUM(COALESCE(fp.net_amount, 0)), 0)   AS profit
     FROM fact_payments fp
-    JOIN dim_time dt ON fp.payment_date_key = dt.time_key
-    WHERE dt.full_date >= %s AND dt.full_date <= %s
+    JOIN dim_time dt ON fp.funds_available_date = dt.date_key
+    WHERE dt.date_key >= %s AND dt.date_key <= %s
     """
     rp_df = execute_query(rev_profit_sql, (month_start, month_end))
     revenue = float(rp_df.iloc[0, 0]) if not rp_df.empty else 0.0
@@ -156,7 +157,6 @@ def render_revenue_comparison_by_month_description(month1_year, month1_month, mo
             **Công thức:** Daily Revenue = SUM(item_total - discount_amount) GROUP BY date
             ...
             """))
-            # ... (rest of Streamlit-specific render, kept for compatibility)
             col1, col2, col3 = st.columns([1, 1, 1])
             with col2:
                 if st.button("❌ Close", key="close_revenue_comparison_by_month_description_btn", width='stretch'):

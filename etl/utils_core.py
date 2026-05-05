@@ -76,6 +76,21 @@ def ensure_proper_data_types(df: pd.DataFrame, data_type: str = "") -> pd.DataFr
     """Lightweight dtype cleanup; keep as-is for PostgreSQL loading."""
     return df
 
+def ensure_text_ids(df: pd.DataFrame) -> pd.DataFrame:
+    """Ensure all ID columns (ending with _id) are formatted as text (strings), without .0 suffix."""
+    out = df.copy()
+    for col in out.columns:
+        if isinstance(col, str) and col.endswith('_id'):
+            def _to_text(x):
+                if pd.isna(x) or x is None or str(x).strip().lower() in {'nan', 'none', 'null', ''}:
+                    return None
+                try:
+                    return str(int(float(x)))
+                except (ValueError, TypeError):
+                    return str(x).strip()
+            out[col] = out[col].apply(_to_text).astype('object')
+    return out
+
 
 def extract_id_from_info(info: Any) -> Optional[tuple]:
     """
@@ -85,15 +100,15 @@ def extract_id_from_info(info: Any) -> Optional[tuple]:
     if info is None or (isinstance(info, float) and np.isnan(info)):
         return None
     s = str(info)
-    m = re.search(r"(order|order id|#)\s*[:#]?\s*(\d+)", s, re.IGNORECASE)
+    m = re.search(r"\border(?:\s+id)?\s*[:#]?\s*(\d+)", s, re.IGNORECASE)
     if m:
-        return (m.group(2), "order_id", s)
-    m = re.search(r"(listing|listing id)\s*[:#]?\s*(\d+)", s, re.IGNORECASE)
+        return (m.group(1), "order_id", s)
+    m = re.search(r"\blisting(?:\s+id)?\s*[:#]?\s*(\d+)", s, re.IGNORECASE)
     if m:
-        return (m.group(2), "listing_id", s)
-    m = re.search(r"(transaction|transaction id)\s*[:#]?\s*(\d+)", s, re.IGNORECASE)
+        return (m.group(1), "listing_id", s)
+    m = re.search(r"\btransaction(?:\s+id)?\s*[:#]?\s*(\d+)", s, re.IGNORECASE)
     if m:
-        return (m.group(2), "transaction_id", s)
+        return (m.group(1), "transaction_id", s)
     return None
 
 
@@ -122,4 +137,3 @@ def extract_product_variations(variations: Any) -> Dict[str, Optional[str]]:
 def get_schema_for_dataframe(data_type: str, df: pd.DataFrame):
     """Optional helper for Parquet writing in original project; not required for PostgreSQL."""
     return None
-

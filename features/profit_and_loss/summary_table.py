@@ -1,7 +1,7 @@
 import pandas as pd
-from shared.query_utils.db_query import execute_query
+from core.query_utils.db_query import execute_query
 from features.profit_and_loss.formula_config import get_default_profit_expense_items
-from shared.pl_account_config import get_cogs_accounts, get_expense_accounts, sql_in_list
+from features.dim_pl_accounts.helpers import get_cogs_accounts, get_expense_accounts, sql_in_list
 
 
 def get_profit_loss_summary_table(start_date: str = None, end_date: str = None, view_mode: str = 'month', selected_items: list = None, use_default_formula: bool = True):
@@ -22,9 +22,9 @@ def get_profit_loss_summary_table(start_date: str = None, end_date: str = None, 
     # Base date filter for all queries
     date_filter = ""
     if start_date:
-        date_filter += f" AND dt.full_date >= '{start_date}'"
+        date_filter += f" AND dt.date_key >= '{start_date}'"
     if end_date:
-        date_filter += f" AND dt.full_date <= '{end_date}'"
+        date_filter += f" AND dt.date_key <= '{end_date}'"
 
     # Select keys based on view_mode (alias fields to stable column names for merges)
     if view_mode == 'year':
@@ -34,14 +34,14 @@ def get_profit_loss_summary_table(start_date: str = None, end_date: str = None, 
         merge_cols = ["year"]
     elif view_mode == 'month_year':
         # For month/year view: group by year and month
-        key_select = "dt.year as year, dt.month as month, dt.month_name as month_name"
-        key_group = "dt.year, dt.month, dt.month_name"
+        key_select = "dt.year as year, dt.month_num as month, dt.month_name as month_name"
+        key_group = "dt.year, dt.month_num, dt.month_name"
         key_order = "year, month"
         merge_cols = ["year", "month", "month_name"]
     else:
         # For month view: group by month only (aggregate across all years)
-        key_select = "dt.month as month, dt.month_name as month_name"
-        key_group = "dt.month, dt.month_name"
+        key_select = "dt.month_num as month, dt.month_name as month_name"
+        key_group = "dt.month_num, dt.month_name"
         key_order = "month"
         merge_cols = ["month", "month_name"]
 
@@ -50,13 +50,13 @@ def get_profit_loss_summary_table(start_date: str = None, end_date: str = None, 
     SELECT DISTINCT {", ".join(merge_cols)}
     FROM (
         SELECT {key_select}
-        FROM fact_financial_transactions fft
-        JOIN dim_time dt ON fft.transaction_date_key = dt.time_key
+        FROM fact_statement fft
+        JOIN dim_time dt ON fft.entry_date = dt.date_key
         WHERE 1=1 {date_filter}
         UNION
         SELECT {key_select}
         FROM fact_bank_transactions fbt
-        JOIN dim_time dt ON fbt.transaction_date_key = dt.time_key
+        JOIN dim_time dt ON fbt.transaction_date::date = dt.date_key
         WHERE 1=1 {date_filter}
     ) p
     ORDER BY {key_order}
@@ -71,107 +71,107 @@ def get_profit_loss_summary_table(start_date: str = None, end_date: str = None, 
         {key_select},
         -- Revenue from Sales
         COALESCE(SUM(CASE
-            WHEN fft.transaction_type = 'Sale' THEN fft.amount
+            WHEN fft.entry_type = 'Sale' THEN fft.amount
             ELSE 0
         END), 0) as revenue,
 
         -- Refund Cost
         COALESCE(SUM(CASE
-            WHEN fft.transaction_type = 'Refund' THEN ABS(fft.amount)
+            WHEN fft.entry_type = 'Refund' THEN ABS(fft.amount)
             ELSE 0
         END), 0) as refund_cost,
 
         -- Transaction Fee
         COALESCE(SUM(CASE
-            WHEN fft.transaction_type = 'Fee'
-                AND (fft.transaction_title ILIKE '%Transaction fee%' OR fft.transaction_title ILIKE '%transaction fee%')
+            WHEN fft.entry_type = 'Fee'
+                AND (fft.title ILIKE '%Transaction fee%' OR fft.title ILIKE '%transaction fee%')
             THEN ABS(fft.fees_and_taxes)
             ELSE 0
         END), 0) as transaction_fee,
 
         -- Processing Fee
         COALESCE(SUM(CASE
-            WHEN fft.transaction_type = 'Fee'
-                AND (fft.transaction_title ILIKE '%Processing fee%' OR fft.transaction_title ILIKE '%processing fee%')
+            WHEN fft.entry_type = 'Fee'
+                AND (fft.title ILIKE '%Processing fee%' OR fft.title ILIKE '%processing fee%')
             THEN ABS(fft.fees_and_taxes)
             ELSE 0
         END), 0) as processing_fee,
 
         -- Regulatory Operating Fee
         COALESCE(SUM(CASE
-            WHEN fft.transaction_type = 'Fee'
-                AND fft.transaction_title ILIKE '%Regulatory Operating fee%'
+            WHEN fft.entry_type = 'Fee'
+                AND fft.title ILIKE '%Regulatory Operating fee%'
             THEN ABS(fft.fees_and_taxes)
             ELSE 0
         END), 0) as regulatory_fee,
 
         -- Listing Fee
         COALESCE(SUM(CASE
-            WHEN fft.transaction_type = 'Fee'
-                AND (fft.transaction_title ILIKE '%Listing fee%' OR fft.transaction_title ILIKE '%listing fee%')
+            WHEN fft.entry_type = 'Fee'
+                AND (fft.title ILIKE '%Listing fee%' OR fft.title ILIKE '%listing fee%')
             THEN ABS(fft.fees_and_taxes)
             ELSE 0
         END), 0) as listing_fee,
 
         -- Marketing Fee
         COALESCE(SUM(CASE
-            WHEN fft.transaction_type = 'Marketing'
+            WHEN fft.entry_type = 'Marketing'
             THEN ABS(fft.fees_and_taxes)
             ELSE 0
         END), 0) as marketing_fee,
 
         -- VAT Fees breakdown
         COALESCE(SUM(CASE
-            WHEN fft.transaction_type = 'VAT'
-                AND fft.transaction_title ILIKE '%auto-renew sold%'
+            WHEN fft.entry_type = 'VAT'
+                AND fft.title ILIKE '%auto-renew sold%'
             THEN ABS(fft.fees_and_taxes)
             ELSE 0
         END), 0) as vat_auto_renew_sold,
 
         COALESCE(SUM(CASE
-            WHEN fft.transaction_type = 'VAT'
-                AND fft.transaction_title ILIKE '%shipping_transaction%'
+            WHEN fft.entry_type = 'VAT'
+                AND fft.title ILIKE '%shipping_transaction%'
             THEN ABS(fft.fees_and_taxes)
             ELSE 0
         END), 0) as vat_shipping_transaction,
 
         COALESCE(SUM(CASE
-            WHEN fft.transaction_type = 'VAT'
-                AND fft.transaction_title ILIKE '%Processing Fee%'
+            WHEN fft.entry_type = 'VAT'
+                AND fft.title ILIKE '%Processing Fee%'
             THEN ABS(fft.fees_and_taxes)
             ELSE 0
         END), 0) as vat_processing_fee,
 
         COALESCE(SUM(CASE
-            WHEN fft.transaction_type = 'VAT'
-                AND fft.transaction_title ILIKE '%transaction credit%'
+            WHEN fft.entry_type = 'VAT'
+                AND fft.title ILIKE '%transaction credit%'
             THEN ABS(fft.fees_and_taxes)
             ELSE 0
         END), 0) as vat_transaction_credit,
 
         COALESCE(SUM(CASE
-            WHEN fft.transaction_type = 'VAT'
-                AND fft.transaction_title ILIKE '%listing credit%'
+            WHEN fft.entry_type = 'VAT'
+                AND fft.title ILIKE '%listing credit%'
             THEN ABS(fft.fees_and_taxes)
             ELSE 0
         END), 0) as vat_listing_credit,
 
         COALESCE(SUM(CASE
-            WHEN fft.transaction_type = 'VAT'
-                AND fft.transaction_title ILIKE '%listing%'
+            WHEN fft.entry_type = 'VAT'
+                AND fft.title ILIKE '%listing%'
             THEN ABS(fft.fees_and_taxes)
             ELSE 0
         END), 0) as vat_listing,
 
         COALESCE(SUM(CASE
-            WHEN fft.transaction_type = 'VAT'
-                AND fft.transaction_title ILIKE '%Etsy Plus subscription%'
+            WHEN fft.entry_type = 'VAT'
+                AND fft.title ILIKE '%Etsy Plus subscription%'
             THEN ABS(fft.fees_and_taxes)
             ELSE 0
         END), 0) as vat_etsy_plus_subscription
 
-    FROM fact_financial_transactions fft
-    JOIN dim_time dt ON fft.transaction_date_key = dt.time_key
+    FROM fact_statement fft
+    JOIN dim_time dt ON fft.entry_date = dt.date_key
     WHERE 1=1 {date_filter}
     GROUP BY {key_group}
     ORDER BY {key_order}
@@ -220,7 +220,7 @@ def get_profit_loss_summary_table(start_date: str = None, end_date: str = None, 
         COALESCE(SUM(CASE WHEN fbt.pl_account_number = '6225' THEN ABS(fbt.debit_amount) ELSE 0 END), 0) as pattern_translation_cost,
         COALESCE(SUM(ABS(fbt.debit_amount)), 0) as cost_of_goods
     FROM fact_bank_transactions fbt
-    JOIN dim_time dt ON fbt.transaction_date_key = dt.time_key
+    JOIN dim_time dt ON fbt.transaction_date::date = dt.date_key
     WHERE 1=1 {date_filter}
     AND fbt.pl_account_number IN ({_cogs_in})
     GROUP BY {key_group}
@@ -238,7 +238,7 @@ def get_profit_loss_summary_table(start_date: str = None, end_date: str = None, 
         COALESCE(SUM(CASE WHEN fbt.pl_account_number = '6421' THEN ABS(fbt.debit_amount) ELSE 0 END), 0) as management_staff_cost,
         COALESCE(SUM(CASE WHEN fbt.pl_account_number = '6428' THEN ABS(fbt.debit_amount) ELSE 0 END), 0) as marketing_staff_cost
     FROM fact_bank_transactions fbt
-    JOIN dim_time dt ON fbt.transaction_date_key = dt.time_key
+    JOIN dim_time dt ON fbt.transaction_date::date = dt.date_key
     WHERE 1=1 {date_filter}
     AND fbt.pl_account_number IN ({_expense_in})
     GROUP BY {key_group}

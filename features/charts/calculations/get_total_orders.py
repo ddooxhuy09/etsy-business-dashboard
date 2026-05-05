@@ -3,23 +3,24 @@ Total Orders Chart - REFACTORED
 Uses shared utilities to eliminate code duplication
 """
 from ._streamlit_shim import st  # noqa: F401
-from shared.query_utils.chart_helpers import (
+from core.query_utils.chart_helpers import (
     execute_chart_query,
     render_chart_description
 )
-from shared.query_utils.query_builder import build_standard_filters
+from core.query_utils.query_builder import build_standard_filters
 
 
 def get_total_orders(start_date: str = None, end_date: str = None, customer_type: str = 'all'):
     """Get total orders"""
     sql = """
     SELECT COUNT(DISTINCT fs.order_key) as "Total Orders" 
-    FROM fact_sales fs 
-    JOIN dim_time dt ON fs.sale_date_key = dt.time_key
+    FROM fact_order_items fs 
+    JOIN fact_orders fo ON fs.order_key = fo.order_key
+    JOIN dim_time dt ON fo.sale_date_key = dt.date_key
     WHERE 1=1
     """
     
-    filter_sql, params = build_standard_filters(start_date, end_date, customer_type, 'fs', 'dt.full_date')
+    filter_sql, params = build_standard_filters(start_date, end_date, customer_type, 'fs', 'dt.date_key')
     sql += filter_sql
     
     return execute_chart_query(sql, tuple(params) if params else None)
@@ -32,7 +33,7 @@ def render_get_total_orders_description(start_date_str, end_date_str, customer_t
 
     **Công thức:** Total Orders = COUNT(DISTINCT order_key)
 
-    - **order_key**: Khóa duy nhất của đơn hàng (từ bảng fact_sales)
+    - **order_key**: Khóa duy nhất của đơn hàng (từ bảng fact_order_items)
     - **COUNT(DISTINCT)**: Đếm số đơn hàng không trùng lặp
     - **Kết quả**: Tổng số đơn hàng đã bán
     """

@@ -3,11 +3,11 @@ Total Sales by Product Chart - REFACTORED
 Uses shared utilities to eliminate code duplication
 """
 from ._streamlit_shim import st  # noqa: F401
-from shared.query_utils.chart_helpers import (
+from core.query_utils.chart_helpers import (
     execute_chart_query,
     render_chart_description
 )
-from shared.query_utils.query_builder import build_standard_filters
+from core.query_utils.query_builder import build_standard_filters
 
 
 def get_total_sales_by_product(start_date: str = None, end_date: str = None, customer_type: str = 'all'):
@@ -15,19 +15,20 @@ def get_total_sales_by_product(start_date: str = None, end_date: str = None, cus
     sql = """
     SELECT 
         CASE WHEN LENGTH(dp.title) > 30 THEN LEFT(dp.title, 27) || '...' ELSE dp.title END as "Product", 
-        ROUND(COALESCE(SUM(COALESCE(fs.item_total, 0) - COALESCE(fs.discount_amount, 0)), 0), 2) as "Revenue (USD)" 
-    FROM fact_sales fs 
+        ROUND(COALESCE(SUM(COALESCE(fs.item_total, 0) - COALESCE(fo.discount_amount, 0)), 0), 2) as "Revenue (USD)" 
+    FROM fact_order_items fs 
     JOIN dim_product dp ON fs.product_key = dp.product_key 
-    JOIN dim_time dt ON fs.sale_date_key = dt.time_key
-    WHERE dp.is_current = true
+    JOIN fact_orders fo ON fs.order_key = fo.order_key
+    JOIN dim_time dt ON fo.sale_date_key = dt.date_key
+    WHERE 1=1
     """
     
-    filter_sql, params = build_standard_filters(start_date, end_date, customer_type, 'fs', 'dt.full_date')
+    filter_sql, params = build_standard_filters(start_date, end_date, customer_type, 'fs', 'dt.date_key')
     sql += filter_sql
     
     sql += """
     GROUP BY 1 
-    ORDER BY SUM(COALESCE(fs.item_total, 0) - COALESCE(fs.discount_amount, 0)) DESC 
+    ORDER BY SUM(COALESCE(fs.item_total, 0) - COALESCE(fo.discount_amount, 0)) DESC 
     LIMIT 10
     """
     

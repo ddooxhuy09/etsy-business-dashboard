@@ -3,30 +3,30 @@ Profit by Month Chart - REFACTORED
 Uses shared utilities to eliminate code duplication
 """
 from ._streamlit_shim import st  # noqa: F401
-from shared.query_utils.chart_helpers import (
+from core.query_utils.chart_helpers import (
     execute_chart_query,
     render_chart_description
 )
-from shared.query_utils.query_builder import build_date_filter
+from core.query_utils.query_builder import build_date_filter
 
 
 def get_profit_by_month(start_date: str = None, end_date: str = None, customer_type: str = 'all'):
     """Get profit by month based on fact_payments.net_amount"""
     sql = """
     SELECT 
-        dt.year || '-' || LPAD(dt.month::text, 2, '0') as "Month",
+        dt.year || '-' || LPAD(dt.month_num::text, 2, '0') as "Month",
         ROUND(COALESCE(SUM(COALESCE(fp.net_amount, 0)), 0), 2) as "Profit (USD)"
     FROM fact_payments fp
-    JOIN dim_time dt ON fp.payment_date_key = dt.time_key
+    JOIN dim_time dt ON fp.funds_available_date = dt.date_key
     WHERE 1=1
     """
 
-    filter_sql, params = build_date_filter(start_date, end_date, 'dt.full_date')
+    filter_sql, params = build_date_filter(start_date, end_date, 'dt.date_key')
     sql += filter_sql
 
     sql += """
-    GROUP BY dt.year, dt.month
-    ORDER BY dt.year, dt.month
+    GROUP BY dt.year, dt.month_num
+    ORDER BY dt.year, dt.month_num
     """
 
     return execute_chart_query(sql, tuple(params) if params else None)
@@ -38,7 +38,7 @@ def render_profit_by_month_description(start_date_str, end_date_str, customer_ty
     **LỢI NHUẬN THEO THÁNG (USD)**
 
     - **Công thức:** Profit (USD) = SUM(fact_payments.net_amount là cột Net Amount trong file EtsyDirectCheckoutPayments2025-1.csv)
-    - Sử dụng ngày theo `payment_date_key` trong bảng `fact_payments`
+    - Sử dụng ngày theo `funds_available_date` trong bảng `fact_payments`
     - Nhóm theo tháng để tổng hợp lợi nhuận theo từng tháng
     """
     

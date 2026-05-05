@@ -48,7 +48,7 @@ def _prepare_raw_from_supabase_storage(*, period: str, tmp_root: Path) -> Path:
     Download period inputs from Supabase Storage bucket into a local temp folder
     that matches CSVLoader's expected layout: {RAW_BASE}/{period}/*.csv + manifest.json.
     """
-    from shared.storage import download_file_from_storage, read_json_from_storage, list_files_in_folder
+    from core.storage import download_file_from_storage, read_json_from_storage, list_files_in_folder
 
     period_dir = tmp_root / period
     period_dir.mkdir(parents=True, exist_ok=True)
@@ -145,7 +145,7 @@ def run_etl(
             out["stderr"] = "\n".join(val_errors)
             return out
 
-        from pipelines.simplified_pipeline import SimplifiedETLPipeline
+        from pipelines.etl_pipeline import SimplifiedETLPipeline
 
         pipeline = SimplifiedETLPipeline(period=period, clean_existing=clean_existing)
         success = pipeline.run()

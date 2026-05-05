@@ -32,19 +32,19 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 
-from shared.auth_middleware import AuthMiddleware
+from auth.middleware import AuthMiddleware
 
 from features.product_cost.routes import register_routes as register_product_cost_routes
 from features.charts.routes import router as charts_router
 from features.profit_and_loss.routes import router as profit_loss_router
-from features.report.routes import router as reports_router
 from features.data_import.routes import router as import_router
 from features.product_catalog.routes import router as product_catalog_router
 from features.product_catalog.import_routes import router as product_catalog_import_router
 from features.bank_account.routes import router as bank_account_router
 from features.bank_account.import_routes import router as bank_account_import_router
-from features.pl_account_config.routes import router as pl_account_config_router
-from api.auth_routes import router as auth_router
+from features.dim_pl_accounts.routes import router as pl_account_config_router
+from features.data_management.routes import router as data_management_router
+from auth.routes import router as auth_router
 
 app = FastAPI(title="Dashboard API", version="0.1.0")
 
@@ -69,8 +69,7 @@ app.include_router(charts_router)
 # Profit & Loss: /api/profit-loss/summary-table
 app.include_router(profit_loss_router)
 
-# Reports: /api/reports/bank-accounts, account-statement, account-statement/pdf
-app.include_router(reports_router)
+# Reports removed
 
 # Import: /api/import/files, upload, run-etl
 app.include_router(import_router)
@@ -85,6 +84,9 @@ app.include_router(bank_account_import_router)
 
 # PL Account Config: /api/pl-accounts
 app.include_router(pl_account_config_router)
+
+# Data Management: /api/data/{source}
+app.include_router(data_management_router)
 
 # Auth: /api/auth/me, /api/auth/verify (public, no auth required)
 app.include_router(auth_router)
@@ -177,6 +179,4 @@ def api_profit_loss():
     return {"message": "Profit & Loss Statement"}
 
 
-@app.get("/api/report")
-def api_report():
-    return {"message": "Report"}
+

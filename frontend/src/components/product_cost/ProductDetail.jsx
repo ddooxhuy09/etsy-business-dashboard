@@ -2,21 +2,16 @@ import React, { useEffect, useState } from 'react';
 import { Table, Typography, Button, Space, message, Spin } from 'antd';
 import { fetchVariants, fetchCogsBreakdown, fetchEtsyFeeBreakdown, fetchMarginBreakdown } from '../../api/productCost';
 import { ArrowLeftOutlined, DownOutlined, UpOutlined } from '@ant-design/icons';
+import { useCurrency } from '../../contexts/CurrencyContext';
 
 const { Text, Title } = Typography;
-
-function formatMoney(num) {
-    return Number(num || 0).toLocaleString('en-US', {
-        minimumFractionDigits: 2,
-        maximumFractionDigits: 2,
-    });
-}
 
 function formatPercent(num) {
     return `${(Number(num) || 0).toFixed(2)}%`;
 }
 
 export default function ProductDetail({ productId, productName, onBack }) {
+    const { fmt } = useCurrency();
     const [variants, setVariants] = useState([]);
     const [detailLoading, setDetailLoading] = useState(false);
     const [showCogsDetail, setShowCogsDetail] = useState(false);
@@ -167,7 +162,7 @@ export default function ProductDetail({ productId, productName, onBack }) {
                                 {!cogsLoading && cogsDetail.map((item, idx) => (
                                     <div key={idx} className="cogs-item">
                                         <span className="cogs-label">{item.label} <span className="cogs-account">({item.pl_account_number})</span></span>
-                                        <span className="cogs-amount">${formatMoney(item.amount)}</span>
+                                        <span className="cogs-amount">{fmt(item.amount)}</span>
                                     </div>
                                 ))}
                                 {!cogsLoading && cogsDetail.length === 0 && <Text className="no-data">No breakdown data available</Text>}
@@ -179,7 +174,7 @@ export default function ProductDetail({ productId, productName, onBack }) {
                                 {!etsyFeeLoading && etsyFeeDetail.map((item, idx) => (
                                     <div key={idx} className="cogs-item">
                                         <span className="cogs-label">{item.label}</span>
-                                        <span className="cogs-amount">${formatMoney(item.amount)}</span>
+                                        <span className="cogs-amount">{fmt(item.amount)}</span>
                                     </div>
                                 ))}
                                 {!etsyFeeLoading && etsyFeeDetail.length === 0 && <Text className="no-data">No breakdown data available</Text>}
@@ -217,7 +212,7 @@ export default function ProductDetail({ productId, productName, onBack }) {
                 else if (isRevenue) className += ' positive';
                 else if (row.type === 'expense' && Number(val) > 0) className += ' expense';
                 else if (isPercent) className += Number(val) >= 0 ? ' positive' : ' negative';
-                return <span className={className}>{isCount ? val : isPercent ? formatPercent(val) : `$${formatMoney(val)}`}</span>;
+                return <span className={className}>{isCount ? val : isPercent ? formatPercent(val) : fmt(val)}</span>;
             },
         },
         ...variants.map((v, idx) => ({
@@ -237,7 +232,7 @@ export default function ProductDetail({ productId, productName, onBack }) {
                 else if (isRevenue) className += ' positive';
                 else if (row.type === 'expense' && Number(val) > 0) className += ' expense';
                 else if (isPercent) className += Number(val) >= 0 ? ' positive' : ' negative';
-                return <span className={className}>{isCount ? val : isPercent ? formatPercent(val) : `$${formatMoney(val)}`}</span>;
+                return <span className={className}>{isCount ? val : isPercent ? formatPercent(val) : fmt(val)}</span>;
             },
         })),
     ];

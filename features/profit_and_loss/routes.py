@@ -13,7 +13,7 @@ from features.profit_and_loss.formula_config import (
     EXPENSE_ITEM_LABELS,
     PL_ACCOUNT_MAPPING,
 )
-from shared.query_utils.db_query import execute_query
+from core.query_utils.db_query import execute_query
 
 router = APIRouter(prefix="/api/profit-loss", tags=["profit-loss"])
 logger = logging.getLogger(__name__)
@@ -126,9 +126,7 @@ def clean_bank_by_pl(
 
     sql = """
     DELETE FROM fact_bank_transactions AS fbt
-    USING dim_time dt
-    WHERE fbt.transaction_date_key = dt.time_key
-      AND dt.full_date BETWEEN %s AND %s
+    WHERE fbt.transaction_date::date BETWEEN %s AND %s
       AND fbt.pl_account_number = ANY(%s)
     """
     params = [start_date, end_date, accounts]

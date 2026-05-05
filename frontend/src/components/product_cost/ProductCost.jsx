@@ -5,6 +5,7 @@ import { fetchProducts, fetchVariants } from '../../api/productCost';
 import { LinkOutlined } from '@ant-design/icons';
 import TableColumnTitle from '../TableColumnTitle';
 import { PRODUCT_COST_COLUMN_ANNOTATIONS } from '../../constants/tableColumnAnnotations';
+import { useCurrency } from '../../contexts/CurrencyContext';
 
 const { Text, Title } = Typography;
 
@@ -12,14 +13,8 @@ const PRODUCT_LINE_COLORS = {
     default: ['#3b82f6', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981', '#06b6d4', '#6366f1'],
 };
 
-function formatMoney(num) {
-    return Number(num || 0).toLocaleString('en-US', {
-        minimumFractionDigits: 2,
-        maximumFractionDigits: 2,
-    });
-}
-
 function VariantsTable({ productId }) {
+    const { fmt } = useCurrency();
     const [loading, setLoading] = useState(false);
     const [rows, setRows] = useState([]);
 
@@ -53,7 +48,7 @@ function VariantsTable({ productId }) {
             title: <TableColumnTitle title="COGS" annotation={PRODUCT_COST_COLUMN_ANNOTATIONS['COGS']} />,
             dataIndex: 'cogs',
             align: 'right',
-            render: (v) => <span className="money-cell">${formatMoney(v)}</span>,
+            render: (v) => <span className="money-cell">{fmt(v)}</span>,
             width: 120,
         },
     ];
@@ -71,6 +66,7 @@ function VariantsTable({ productId }) {
 }
 
 export default function ProductCost() {
+    const { fmt } = useCurrency();
     const [loading, setLoading] = useState(false);
     const [rows, setRows] = useState([]);
     const [colorMap, setColorMap] = useState({});
@@ -177,7 +173,7 @@ export default function ProductCost() {
             width: 110,
             sorter: (a, b) => (a.sales || 0) - (b.sales || 0),
             defaultSortOrder: 'descend',
-            render: (v) => <span className="money-cell positive">${formatMoney(v)}</span>,
+            render: (v) => <span className="money-cell positive">{fmt(v)}</span>,
         },
         {
             title: <TableColumnTitle title="Refund" annotation={PRODUCT_COST_COLUMN_ANNOTATIONS['Refund']} />,
@@ -187,7 +183,7 @@ export default function ProductCost() {
             sorter: (a, b) => (a.refund || 0) - (b.refund || 0),
             render: (v) => (
                 <span className={`money-cell ${Number(v) > 0 ? 'negative' : ''}`}>
-                    ${formatMoney(v)}
+                    {fmt(v)}
                 </span>
             ),
         },
@@ -205,7 +201,7 @@ export default function ProductCost() {
             align: 'right',
             width: 100,
             sorter: (a, b) => (a.cogs || 0) - (b.cogs || 0),
-            render: (v) => <span className="money-cell expense">${formatMoney(v)}</span>,
+            render: (v) => <span className="money-cell expense">{fmt(v)}</span>,
         },
         {
             title: <TableColumnTitle title="Etsy Fee" annotation={PRODUCT_COST_COLUMN_ANNOTATIONS['Etsy Fee']} />,
@@ -213,7 +209,7 @@ export default function ProductCost() {
             align: 'right',
             width: 100,
             sorter: (a, b) => (a.etsy_fee || 0) - (b.etsy_fee || 0),
-            render: (v) => <span className="money-cell expense">${formatMoney(v)}</span>,
+            render: (v) => <span className="money-cell expense">{fmt(v)}</span>,
         },
         {
             title: <TableColumnTitle title="Profit" annotation={PRODUCT_COST_COLUMN_ANNOTATIONS['Profit']} />,
@@ -223,7 +219,7 @@ export default function ProductCost() {
             sorter: (a, b) => (a.profit || 0) - (b.profit || 0),
             render: (v) => (
                 <span className={`money-cell profit ${Number(v) >= 0 ? 'positive' : 'negative'}`}>
-                    ${formatMoney(v)}
+                    {fmt(v)}
                 </span>
             ),
         },

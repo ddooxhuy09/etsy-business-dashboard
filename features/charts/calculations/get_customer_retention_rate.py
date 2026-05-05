@@ -3,26 +3,27 @@ Customer Retention Rate Chart - REFACTORED
 Uses shared utilities to eliminate code duplication
 """
 from ._streamlit_shim import st  # noqa: F401
-from shared.query_utils.chart_helpers import (
+from core.query_utils.chart_helpers import (
     execute_chart_query,
     render_chart_description
 )
-from shared.query_utils.query_builder import build_standard_filters
+from core.query_utils.query_builder import build_standard_filters
 
 
 def get_customer_retention_rate(start_date: str = None, end_date: str = None, customer_type: str = 'all'):
     """Get customer retention rate"""
     sql = """
     SELECT ROUND(
-        COUNT(DISTINCT CASE WHEN order_count > 1 THEN fs.customer_key END) * 100.0 / NULLIF(COUNT(DISTINCT fs.customer_key), 0),
+        COUNT(DISTINCT CASE WHEN order_count > 1 THEN fo.customer_key END) * 100.0 / NULLIF(COUNT(DISTINCT fo.customer_key), 0),
     2) AS "Retention Rate (%)"
-    FROM fact_sales fs
-    JOIN (SELECT customer_key, COUNT(DISTINCT order_key) AS order_count FROM fact_sales GROUP BY 1) co ON fs.customer_key = co.customer_key
-    JOIN dim_time dt ON fs.sale_date_key = dt.time_key
+    FROM fact_order_items fs
+    JOIN fact_orders fo ON fs.order_key = fo.order_key
+    JOIN (SELECT fo2.customer_key, COUNT(DISTINCT fo2.order_key) AS order_count FROM fact_orders fo2 GROUP BY 1) co ON fo.customer_key = co.customer_key
+    JOIN dim_time dt ON fo.sale_date_key = dt.date_key
     WHERE 1=1
     """
     
-    filter_sql, params = build_standard_filters(start_date, end_date, customer_type, 'fs', 'dt.full_date')
+    filter_sql, params = build_standard_filters(start_date, end_date, customer_type, 'fs', 'dt.date_key')
     sql += filter_sql
     
     return execute_chart_query(sql, tuple(params) if params else None)

@@ -1,17 +1,16 @@
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { DatePicker, Select, Spin, Card, Row, Col, Space, Button, Popover } from 'antd';
-import { InfoCircleOutlined, SwapOutlined } from '@ant-design/icons';
+import { InfoCircleOutlined } from '@ant-design/icons';
 import createPlotlyComponent from 'react-plotly.js/factory';
 import { CHART_ANNOTATIONS } from '../constants/chartAnnotations';
 import Plotly from 'plotly.js-dist-min';
 import * as ChartsApi from '../api/charts';
+import { useCurrency } from '../contexts/CurrencyContext';
 import '../styles/charts.css';
 
 const Plot = createPlotlyComponent(Plotly);
 
 const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
-
-const EXCHANGE_RATE = 24708.655;
 
 function ChartAnnotationButton({ annotationKey }) {
   const ann = CHART_ANNOTATIONS[annotationKey];
@@ -68,21 +67,14 @@ export default function Charts() {
   const [fromDate, setFromDate] = useState(null);
   const [toDate, setToDate] = useState(null);
   const [customerType, setCustomerType] = useState('all');
-  const [currency, setCurrency] = useState('USD');
+  const { currency, convert, fmt: fmtMoney } = useCurrency();
 
   // Currency conversion helpers
   const cv = useCallback((val) => {
     if (val == null) return null;
-    return currency === 'VND' ? Number(val) * EXCHANGE_RATE : Number(val);
-  }, [currency]);
+    return convert(val);
+  }, [convert]);
   const sym = currency === 'VND' ? '₫' : '$';
-  const fmtMoney = useCallback((val, decimals) => {
-    if (val == null) return '—';
-    const converted = currency === 'VND' ? Number(val) * EXCHANGE_RATE : Number(val);
-    if (currency === 'VND') return `₫${Math.round(converted).toLocaleString('vi-VN')}`;
-    const d = decimals != null ? decimals : 2;
-    return `$${converted.toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d })}`;
-  }, [currency]);
   const curUnit = currency === 'VND' ? 'VND' : 'USD';
 
   const [m1y, setM1y] = useState(new Date().getFullYear());
@@ -364,14 +356,6 @@ export default function Charts() {
             style={{ width: 160 }}
             options={custOpts}
           />
-          <Button
-            type={currency === 'VND' ? 'primary' : 'default'}
-            icon={<SwapOutlined />}
-            onClick={() => setCurrency((c) => (c === 'USD' ? 'VND' : 'USD'))}
-            style={{ fontWeight: 600 }}
-          >
-            {currency === 'USD' ? 'USD → VND' : 'VND → USD'}
-          </Button>
         </Space>
       </Card>
 

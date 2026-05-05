@@ -7,7 +7,7 @@ Shows 3 ratio lines: LTV(30d)/CAC, LTV(60d)/CAC, LTV(90d)/CAC
 from ._streamlit_shim import st  # noqa: F401
 import pandas as pd
 import textwrap
-from shared.query_utils.db_query import execute_query
+from core.query_utils.db_query import execute_query
 
 
 def get_cac_clv_ratio_over_time(start_date: str = None, end_date: str = None) -> pd.DataFrame:
@@ -21,90 +21,91 @@ def get_cac_clv_ratio_over_time(start_date: str = None, end_date: str = None) ->
     sql = """
     WITH bounds AS (
         SELECT
-            COALESCE(CAST(%s AS date), MIN(dt.full_date)) AS start_date,
-            COALESCE(CAST(%s AS date), MAX(dt.full_date)) AS end_date
+            COALESCE(CAST(%s AS date), MIN(dt.date_key)) AS start_date,
+            COALESCE(CAST(%s AS date), MAX(dt.date_key)) AS end_date
         FROM dim_time dt
     ), months AS (
-        SELECT ym.year, ym.month,
-               MIN(dt.full_date) AS month_start,
-               MAX(dt.full_date) AS month_end
+        SELECT ym.year, ym.month_num,
+               MIN(dt.date_key) AS month_start,
+               MAX(dt.date_key) AS month_end
         FROM (
-            SELECT DISTINCT dt.year, dt.month
-            FROM fact_sales fs
-            JOIN dim_time dt ON fs.sale_date_key = dt.time_key
-            JOIN bounds b ON dt.full_date BETWEEN b.start_date AND b.end_date
+            SELECT DISTINCT dt.year, dt.month_num
+            FROM fact_order_items fs
+            JOIN fact_orders fo ON fs.order_key = fo.order_key
+            JOIN dim_time dt ON fo.sale_date_key = dt.date_key
+            JOIN bounds b ON dt.date_key BETWEEN b.start_date AND b.end_date
             UNION
-            SELECT DISTINCT dt.year, dt.month
-            FROM fact_financial_transactions fft
-            JOIN dim_time dt ON fft.transaction_date_key = dt.time_key
-            JOIN bounds b ON dt.full_date BETWEEN b.start_date AND b.end_date
+            SELECT DISTINCT dt.year, dt.month_num
+            FROM fact_statement fft
+            JOIN dim_time dt ON fft.entry_date = dt.date_key
+            JOIN bounds b ON dt.date_key BETWEEN b.start_date AND b.end_date
         ) ym
-        JOIN dim_time dt ON dt.year = ym.year AND dt.month = ym.month
-        GROUP BY ym.year, ym.month
-        ORDER BY ym.year, ym.month
+        JOIN dim_time dt ON dt.year = ym.year AND dt.month_num = ym.month_num
+        GROUP BY ym.year, ym.month_num
+        ORDER BY ym.year, ym.month_num
     )
     SELECT
-        m.year || '-' || LPAD(m.month::text, 2, '0') AS "Month",
+        m.year || '-' || LPAD(m.month_num::text, 2, '0') AS "Month",
 
-        -- CAC = |Marketing fees| / New customers
         ROUND(
           ABS(
             COALESCE((
               SELECT SUM(COALESCE(fft.fees_and_taxes, 0))
-              FROM fact_financial_transactions fft
-              JOIN dim_time dt1 ON fft.transaction_date_key = dt1.time_key
-              WHERE fft.transaction_type = 'Marketing'
-                AND dt1.full_date BETWEEN m.month_start AND m.month_end
+              FROM fact_statement fft
+              JOIN dim_time dt1 ON fft.entry_date = dt1.date_key
+              WHERE fft.entry_type = 'Marketing'
+                AND dt1.date_key BETWEEN m.month_start AND m.month_end
             ), 0)
           )
           / NULLIF((
-            SELECT COUNT(DISTINCT fs2.customer_key)
-            FROM fact_sales fs2
-            JOIN dim_time dt2 ON fs2.sale_date_key = dt2.time_key
-            WHERE fs2.customer_key IN (
-                SELECT customer_key
-                FROM fact_sales
-                GROUP BY customer_key
-                HAVING COUNT(DISTINCT order_key) = 1
+            SELECT COUNT(DISTINCT fo2.customer_key)
+            FROM fact_order_items fs2
+            JOIN fact_orders fo2 ON fs2.order_key = fo2.order_key
+            JOIN dim_time dt2 ON fo2.sale_date_key = dt2.date_key
+            WHERE fo2.customer_key IN (
+                SELECT fo_sub.customer_key
+                FROM fact_orders fo_sub
+                GROUP BY fo_sub.customer_key
+                HAVING COUNT(DISTINCT fo_sub.order_key) = 1
             )
-              AND dt2.full_date BETWEEN m.month_start AND m.month_end
+              AND dt2.date_key BETWEEN m.month_start AND m.month_end
           ), 0), 2) AS "CAC (USD)",
 
-        -- LTV 30d: AOV × Freq using last 30 days ending at month_end
         (SELECT ROUND(
             (COALESCE(SUM(fs3.item_total), 0)::numeric / NULLIF(COUNT(DISTINCT fs3.order_key), 0))
             *
-            (COUNT(DISTINCT fs3.order_key)::numeric / NULLIF(COUNT(DISTINCT fs3.customer_key), 0))
+            (COUNT(DISTINCT fs3.order_key)::numeric / NULLIF(COUNT(DISTINCT fo3.customer_key), 0))
         , 2)
-        FROM fact_sales fs3
-        JOIN dim_time dt3 ON fs3.sale_date_key = dt3.time_key
-        WHERE dt3.full_date BETWEEN (m.month_end - INTERVAL '29 days')::date AND m.month_end
+        FROM fact_order_items fs3
+        JOIN fact_orders fo3 ON fs3.order_key = fo3.order_key
+        JOIN dim_time dt3 ON fo3.sale_date_key = dt3.date_key
+        WHERE dt3.date_key BETWEEN (m.month_end - INTERVAL '29 days')::date AND m.month_end
         ) AS "LTV 30d (USD)",
 
-        -- LTV 60d
         (SELECT ROUND(
             (COALESCE(SUM(fs4.item_total), 0)::numeric / NULLIF(COUNT(DISTINCT fs4.order_key), 0))
             *
-            (COUNT(DISTINCT fs4.order_key)::numeric / NULLIF(COUNT(DISTINCT fs4.customer_key), 0))
+            (COUNT(DISTINCT fs4.order_key)::numeric / NULLIF(COUNT(DISTINCT fo4.customer_key), 0))
         , 2)
-        FROM fact_sales fs4
-        JOIN dim_time dt4 ON fs4.sale_date_key = dt4.time_key
-        WHERE dt4.full_date BETWEEN (m.month_end - INTERVAL '59 days')::date AND m.month_end
+        FROM fact_order_items fs4
+        JOIN fact_orders fo4 ON fs4.order_key = fo4.order_key
+        JOIN dim_time dt4 ON fo4.sale_date_key = dt4.date_key
+        WHERE dt4.date_key BETWEEN (m.month_end - INTERVAL '59 days')::date AND m.month_end
         ) AS "LTV 60d (USD)",
 
-        -- LTV 90d
         (SELECT ROUND(
             (COALESCE(SUM(fs5.item_total), 0)::numeric / NULLIF(COUNT(DISTINCT fs5.order_key), 0))
             *
-            (COUNT(DISTINCT fs5.order_key)::numeric / NULLIF(COUNT(DISTINCT fs5.customer_key), 0))
+            (COUNT(DISTINCT fs5.order_key)::numeric / NULLIF(COUNT(DISTINCT fo5.customer_key), 0))
         , 2)
-        FROM fact_sales fs5
-        JOIN dim_time dt5 ON fs5.sale_date_key = dt5.time_key
-        WHERE dt5.full_date BETWEEN (m.month_end - INTERVAL '89 days')::date AND m.month_end
+        FROM fact_order_items fs5
+        JOIN fact_orders fo5 ON fs5.order_key = fo5.order_key
+        JOIN dim_time dt5 ON fo5.sale_date_key = dt5.date_key
+        WHERE dt5.date_key BETWEEN (m.month_end - INTERVAL '89 days')::date AND m.month_end
         ) AS "LTV 90d (USD)"
 
     FROM months m
-    GROUP BY m.year, m.month, m.month_start, m.month_end
+    GROUP BY m.year, m.month_num, m.month_start, m.month_end
     ORDER BY 1
     """
 
@@ -116,7 +117,6 @@ def get_cac_clv_ratio_over_time(start_date: str = None, end_date: str = None) ->
             "LTV(30d)/CAC", "LTV(60d)/CAC", "LTV(90d)/CAC",
         ])
 
-    # Compute 3 ratios
     for period in ["30d", "60d", "90d"]:
         ltv_col = f"LTV {period} (USD)"
         ratio_col = f"LTV({period})/CAC"

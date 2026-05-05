@@ -1,8 +1,7 @@
 import React, { useState } from 'react';
-import { Layout as AntLayout, Menu, Button, Space, Dropdown } from 'antd';
+import { Layout as AntLayout, Menu, Button, Space, Dropdown, Tooltip } from 'antd';
 import { useNavigate, useLocation, Outlet } from 'react-router-dom';
 import {
-  HomeOutlined,
   BarChartOutlined,
   ShoppingOutlined,
   DollarOutlined,
@@ -12,17 +11,20 @@ import {
   LogoutOutlined,
   KeyOutlined,
   UserOutlined,
+  DatabaseOutlined,
+  UploadOutlined,
+  SwapOutlined,
 } from '@ant-design/icons';
 import { useAuth } from '../contexts/AuthContext';
+import { useCurrency } from '../contexts/CurrencyContext';
 
 const { Header, Sider, Content } = AntLayout;
 
 const navItems = [
-  { key: '/', icon: <HomeOutlined />, label: 'Home' },
+  { key: '/', icon: <DatabaseOutlined />, label: 'Data' },
   { key: '/charts', icon: <BarChartOutlined />, label: 'Charts' },
   { key: '/product-cost', icon: <ShoppingOutlined />, label: 'Product Cost' },
   { key: '/profit-loss', icon: <DollarOutlined />, label: 'Profit & Loss' },
-  { key: '/report', icon: <FileTextOutlined />, label: 'Report' },
   { key: '/product-catalog', icon: <AppstoreOutlined />, label: 'Product Catalog' },
   { key: '/bank-account', icon: <BankOutlined />, label: 'Bank Account' },
 ];
@@ -32,6 +34,7 @@ export default function Layout() {
   const navigate = useNavigate();
   const location = useLocation();
   const { user, signOut } = useAuth();
+  const { currency, toggle } = useCurrency();
 
   return (
     <AntLayout style={{ minHeight: '100vh' }}>
@@ -60,6 +63,21 @@ export default function Layout() {
       <AntLayout>
         <Header style={{ padding: '0 24px', background: '#fff', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div style={{ fontSize: 16, fontWeight: 500 }}>Etsy Business Dashboard</div>
+          <Space size={12}>
+            <Tooltip title={`Switch to ${currency === 'USD' ? 'VND (₫)' : 'USD ($)'}`}>
+              <Button
+                icon={<SwapOutlined />}
+                onClick={toggle}
+                style={{
+                  fontWeight: 600,
+                  minWidth: 72,
+                  borderColor: currency === 'USD' ? '#1890ff' : '#52c41a',
+                  color: currency === 'USD' ? '#1890ff' : '#52c41a',
+                }}
+              >
+                {currency === 'USD' ? '$ USD' : '₫ VND'}
+              </Button>
+            </Tooltip>
           <Dropdown
             menu={{
               items: [
@@ -85,6 +103,7 @@ export default function Layout() {
               <span style={{ color: '#666' }}>{user?.email}</span>
             </Button>
           </Dropdown>
+          </Space>
         </Header>
         <Content style={{ margin: '24px 16px', padding: 24, background: '#fff' }}>
           <Outlet />

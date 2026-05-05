@@ -1,12 +1,16 @@
 """
 API route handlers for Product Cost endpoints.
 """
+import logging
+import traceback
 from typing import List
 from datetime import datetime
 from fastapi import HTTPException
 
 from .models import ProductSummary, VariantDetail, CogsBreakdown, EtsyFeeBreakdown, MarginBreakdown
 from .queries import query_products_optimized, query_variants_optimized, query_cogs_breakdown, query_etsy_fee_breakdown, query_margin_breakdown, COGS_LABELS
+
+logger = logging.getLogger(__name__)
 
 
 def register_routes(app):
@@ -33,7 +37,8 @@ def register_routes(app):
                 )
                 for r in rows
             ]
-        except Exception:
+        except Exception as e:
+            logger.error("list_products failed: %s\n%s", e, traceback.format_exc())
             return []
 
     @app.get("/api/products/{product_id}/variants", response_model=List[VariantDetail])

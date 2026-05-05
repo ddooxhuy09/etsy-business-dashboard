@@ -30,17 +30,22 @@ export function deleteProductCatalogRows(ids) {
 }
 
 // Bank Transactions API
-export function fetchBankTransactions({ limit = 100, offset = 0, search, sort_by, sort_order, account_number } = {}) {
+export function fetchBankTransactions({ limit = 100, offset = 0, search, sort_by, sort_order, account_number, date_from, date_to } = {}) {
   const params = { limit, offset };
   if (search) params.search = search;
   if (sort_by) params.sort_by = sort_by;
   if (sort_order) params.sort_order = sort_order;
   if (account_number) params.account_number = account_number;
+  if (date_from) params.date_from = date_from;
+  if (date_to) params.date_to = date_to;
   return api.get('/api/static/bank-transactions', { params }).then((r) => r.data);
 }
 
-export function fetchBankTransactionsCount(account_number) {
-  const params = account_number ? { account_number } : {};
+export function fetchBankTransactionsCount(account_number, date_from, date_to) {
+  const params = {};
+  if (account_number) params.account_number = account_number;
+  if (date_from) params.date_from = date_from;
+  if (date_to) params.date_to = date_to;
   return api.get('/api/static/bank-transactions/count', { params }).then((r) => r.data);
 }
 
