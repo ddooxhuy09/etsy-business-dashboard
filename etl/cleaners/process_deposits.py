@@ -30,7 +30,7 @@ def clean_deposits_data(df: pd.DataFrame) -> pd.DataFrame:
     
 
         df_clean['Amount'] = df_clean['Amount'].apply(clean_currency_amount)
-        df_clean['Amount'] = df_clean['Amount'] / 24874
+        df_clean['Amount'] = df_clean['Amount'] / EXCHANGE_RATE
     
     if 'Currency' in df_clean.columns:
         df_clean['Currency'] = 'USD'

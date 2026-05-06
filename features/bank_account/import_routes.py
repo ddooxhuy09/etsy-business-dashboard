@@ -12,6 +12,7 @@ from typing import Optional
 from pydantic import BaseModel
 
 from core.database import run_query, execute_query, get_database_url
+from config import EXCHANGE_RATE
 from etl.cleaners.process_bank_transactions import (
     clean_bank_transactions_data,
     get_allowed_pl_accounts,
@@ -19,16 +20,12 @@ from etl.cleaners.process_bank_transactions import (
 )
 from etl.expected_columns import validate_columns, get_raw_columns_list
 
-# Exchange rate: 1 USD = 24,000 VND
-# All imported monetary values are in VND and are converted to USD at import time.
-VND_TO_USD_RATE = 24_000
-
 
 def _vnd_to_usd(value) -> float | None:
     """Convert a VND amount to USD and ensure non-negative.
 
     - Takes the absolute value first (bank statement debits are sometimes stored negative).
-    - Divides by VND_TO_USD_RATE.
+    - Divides by EXCHANGE_RATE.
     - Returns None for null/NaN inputs.
     """
     if value is None:
@@ -37,7 +34,7 @@ def _vnd_to_usd(value) -> float | None:
         v = float(value)
         if math.isnan(v) or not math.isfinite(v):
             return None
-        return abs(v) / VND_TO_USD_RATE
+        return abs(v) / EXCHANGE_RATE
     except (TypeError, ValueError):
         return None
 

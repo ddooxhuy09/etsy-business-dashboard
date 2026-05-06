@@ -44,7 +44,7 @@ def clean_sold_orders_data(df: pd.DataFrame) -> pd.DataFrame:
         columns_to_convert = ['Card Processing Fees', 'Order Net']
         for col in columns_to_convert:
             if col in df_clean.columns:
-                df_clean[col] = (df_clean[col] * 100 / 24847)
+                df_clean[col] = (df_clean[col] * 100 / EXCHANGE_RATE)
     except Exception as e:
         logger.warning(f"Could not convert to USD: {e}")
     

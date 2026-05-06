@@ -8,7 +8,7 @@ import re
 import numpy as np
 import pandas as pd
 
-from config import DATE_FORMATS
+from config import DATE_FORMATS, EXCHANGE_RATE
 from etl.utils_core import (
     clean_date_to_yyyymmdd,
     convert_columns_to_snake_case,
@@ -64,7 +64,7 @@ def clean_statement_data(df: pd.DataFrame) -> pd.DataFrame:
 
     for col in ["Amount", "Fees & Taxes", "Net"]:
         if col in df_clean.columns:
-            df_clean[col] = clean_statement_currency_columns(df_clean[col]) / 24847
+            df_clean[col] = clean_statement_currency_columns(df_clean[col]) / EXCHANGE_RATE
 
     if "Tax Details" in df_clean.columns:
         df_clean["Tax Details"] = df_clean["Tax Details"].where(df_clean["Tax Details"].notna(), None)

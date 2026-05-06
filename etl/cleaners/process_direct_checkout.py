@@ -34,8 +34,7 @@ def clean_direct_checkout_data(df: pd.DataFrame) -> pd.DataFrame:
     for col in numeric_columns:
         if col in df_clean.columns:
             df_clean[col] = df_clean[col].apply(clean_currency_amount)
-            # Exchange Rate Processing: apply (value * 100) / 24847 unconditionally
-            df_clean[col] = (df_clean[col] * 100) / 24847
+            df_clean[col] = (df_clean[col] * 100) / EXCHANGE_RATE
             
     if 'Currency' in df_clean.columns:
         df_clean['Currency'] = 'USD'

@@ -9,7 +9,7 @@ import re
 import logging
 from typing import Optional, Set
 
-from config import DATE_FORMATS
+from config import DATE_FORMATS, EXCHANGE_RATE
 from etl.utils_core import (
     clean_date_to_yyyymmdd, 
     setup_logging, 
@@ -162,7 +162,7 @@ def clean_bank_transactions_data(df: pd.DataFrame) -> pd.DataFrame:
             logger.info(f"💰 Cleaning numeric column: {col}")
             df_clean[col] = df_clean[col].astype(str).str.replace(',', '', regex=False)
             df_clean[col] = pd.to_numeric(df_clean[col], errors='coerce')
-            df_clean[col] = df_clean[col] / 24874
+            df_clean[col] = df_clean[col] / EXCHANGE_RATE
     
     # Ensure proper data types
     logger.info("✅ Ensuring proper data types...")
