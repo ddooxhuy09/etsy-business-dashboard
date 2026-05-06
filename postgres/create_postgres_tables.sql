@@ -232,6 +232,9 @@ ON fact_bank_transactions (pl_account_number);
 CREATE INDEX IF NOT EXISTS idx_bank_tx_product 
 ON fact_bank_transactions (parsed_product_id);
 
+CREATE UNIQUE INDEX IF NOT EXISTS uq_bank_tx_account_ref
+ON fact_bank_transactions (account_number, reference_number);
+
 CREATE INDEX IF NOT EXISTS idx_orders_date 
 ON fact_orders (sale_date_key);
 

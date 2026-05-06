@@ -319,12 +319,28 @@ async def upload_bank_transactions(file: UploadFile = File(...)):
                         return None
                     return s
 
+                existing_refs = set()
+                if "reference_number" in df.columns:
+                    ref_pairs = df["reference_number"].dropna().unique().tolist()
+                    if ref_pairs:
+                        cur.execute(
+                            "SELECT reference_number FROM fact_bank_transactions WHERE reference_number = ANY(%s)",
+                            ([str(r) for r in ref_pairs],),
+                        )
+                        existing_refs = {str(r[0]) for r in cur.fetchall()}
+
+                skipped = 0
                 insert_rows = []
                 for _, row in df.iterrows():
+                    ref = _safe_str(row.get("reference_number"))
+                    acct = _safe_str(row.get("account_number"))
+                    if ref and acct and ref in existing_refs:
+                        skipped += 1
+                        continue
                     insert_rows.append((
                         row["transaction_date_norm"].to_pydatetime() if pd.notna(row.get("transaction_date_norm")) else None,
-                        _safe_str(row.get("reference_number")),
-                        _safe_str(row.get("account_number")),
+                        ref,
+                        acct,
                         _safe_str(row.get("account_name")),
                         _safe_str(row.get("opening_date")),
                         _safe_str(row.get("transaction_description")),
@@ -361,8 +377,9 @@ async def upload_bank_transactions(file: UploadFile = File(...)):
 
         return {
             "ok": True,
-            "message": f"Imported {imported} rows",
+            "message": f"Imported {imported} rows" + (f", skipped {skipped} duplicates" if skipped else ""),
             "imported": imported,
+            "skipped_duplicates": skipped,
             "errors": errors[:10]
         }
     except Exception as e:
@@ -395,6 +412,17 @@ def import_bank_transaction_row(row: BankTransactionRow):
 
         if not row.account_number:
             raise HTTPException(status_code=400, detail="account_number is required")
+
+        if row.reference_number:
+            existing = run_query(
+                "SELECT 1 FROM fact_bank_transactions WHERE account_number = %s AND reference_number = %s LIMIT 1",
+                (row.account_number, row.reference_number),
+            )
+            if not existing.empty:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Duplicate: transaction with reference_number '{row.reference_number}' for account '{row.account_number}' already exists.",
+                )
 
         try:
             parsed = parse_description(row.transaction_description or '')
