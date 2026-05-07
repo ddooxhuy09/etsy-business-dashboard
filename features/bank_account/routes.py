@@ -154,6 +154,49 @@ def get_bank_transactions_count(
     return {"total": total}
 
 
+@router.put("/bank-transactions/{bank_transaction_key}")
+def update_bank_transaction(bank_transaction_key: int, updates: dict = Body(...)):
+    """Update a single bank transaction row by primary key."""
+    if not updates:
+        raise HTTPException(status_code=400, detail="No fields provided")
+
+    allowed_columns = {
+        "transaction_date": "transaction_date",
+        "reference_number": "reference_number",
+        "account_number": "account_number",
+        "account_name": "account_name",
+        "transaction_description": "transaction_description",
+        "pl_account_number": "pl_account_number",
+        "credit_amount": "credit_amount",
+        "debit_amount": "debit_amount",
+        "balance": "balance",
+        "parsed_product_line_id": "parsed_product_line_id",
+        "parsed_product_id": "parsed_product_id",
+        "parsed_variant_id": "parsed_variant_id",
+    }
+
+    set_clauses = []
+    params = []
+    for key, value in updates.items():
+        col = allowed_columns.get(key)
+        if not col:
+            raise HTTPException(status_code=400, detail=f"Invalid column: {key}")
+        if key in ("credit_amount", "debit_amount", "balance") and value is not None:
+            try:
+                value = float(value)
+            except (TypeError, ValueError):
+                raise HTTPException(status_code=400, detail=f"Invalid number for {key}: {value}")
+        set_clauses.append(f"{col} = %s")
+        params.append(value)
+
+    params.append(bank_transaction_key)
+    execute_query(
+        f"UPDATE fact_bank_transactions SET {', '.join(set_clauses)} WHERE bank_transaction_key = %s",
+        tuple(params),
+    )
+    return {"ok": True, "updated": bank_transaction_key}
+
+
 @router.delete("/bank-transactions")
 def delete_bank_transactions(ids: list[int] = Body(..., embed=True)):
     """Delete bank transactions by primary keys (bank_transaction_key)."""

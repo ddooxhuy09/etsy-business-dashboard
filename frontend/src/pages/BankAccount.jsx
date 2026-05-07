@@ -1,12 +1,181 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { Card, Upload, Button, message, Space, Typography, Alert, Table, Input, Spin, Select, Modal, Form, InputNumber, DatePicker } from 'antd';
-import { UploadOutlined, BankOutlined, CheckCircleOutlined, SearchOutlined, ClearOutlined, PlusOutlined, ReloadOutlined, SettingOutlined } from '@ant-design/icons';
-import { fetchBankTransactions, fetchBankTransactionsCount, uploadBankTransactions, importBankTransactionRow, deleteBankTransactions, fetchPlAccounts, createPlAccount, updatePlAccount, deletePlAccount } from '../api/staticDataApi';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { Card, Upload, Button, message, Space, Typography, Alert, Table, Input, Spin, Select, Modal, Form, InputNumber, DatePicker, Popconfirm, Tooltip } from 'antd';
+import { UploadOutlined, BankOutlined, CheckCircleOutlined, SearchOutlined, ClearOutlined, PlusOutlined, ReloadOutlined, SettingOutlined, EditOutlined, SaveOutlined, CloseOutlined } from '@ant-design/icons';
+import { fetchBankTransactions, fetchBankTransactionsCount, uploadBankTransactions, importBankTransactionRow, deleteBankTransactions, updateBankTransaction, fetchPlAccounts, createPlAccount, updatePlAccount, deletePlAccount } from '../api/staticDataApi';
 import { useCurrency } from '../contexts/CurrencyContext';
 import dayjs from 'dayjs';
 
 const { Title, Text } = Typography;
 const { Search } = Input;
+
+const DATE_FORMAT = 'YYYY-MM-DD';
+
+const EDITABLE_COLUMNS = new Set([
+  'transaction_date',
+  'reference_number',
+  'account_number',
+  'account_name',
+  'transaction_description',
+  'pl_account_number',
+  'credit_amount',
+  'debit_amount',
+  'balance',
+]);
+
+function validateField(field, value) {
+  if (value === null || value === undefined || value === '') {
+    if (field === 'transaction_date' || field === 'reference_number' || field === 'account_number') {
+      return 'Required';
+    }
+    return null;
+  }
+
+  if (field === 'transaction_date') {
+    if (value && !dayjs(value, DATE_FORMAT, true).isValid() && !dayjs.isDayjs(value)) {
+      return 'Invalid date (YYYY-MM-DD)';
+    }
+    return null;
+  }
+
+  if (field === 'credit_amount' || field === 'debit_amount' || field === 'balance') {
+    const num = Number(value);
+    if (isNaN(num)) return 'Must be a number';
+    return null;
+  }
+
+  return null;
+}
+
+function EditableCell({
+  editing,
+  dataIndex,
+  record,
+  children,
+  onSave,
+  onCancel,
+  inputRef,
+  ...restProps
+}) {
+  const triggerSave = useCallback(() => {
+    const input = inputRef?.current;
+    if (!input) return;
+
+    let value;
+    if (input instanceof HTMLInputElement || input instanceof HTMLTextAreaElement) {
+      value = input.value;
+    } else {
+      return;
+    }
+
+    const error = validateField(dataIndex, value);
+    if (error) {
+      message.error(`${dataIndex}: ${error}`);
+      return;
+    }
+
+    let oldValue = record[dataIndex];
+    if (dataIndex === 'transaction_date') {
+      if (value === (oldValue || '')) { onCancel(); return; }
+    } else if (dataIndex === 'credit_amount' || dataIndex === 'debit_amount' || dataIndex === 'balance') {
+      const oldNum = oldValue != null ? Number(oldValue) : 0;
+      const newNum = value === '' ? 0 : Number(value);
+      if (oldNum === newNum) { onCancel(); return; }
+      value = newNum;
+    } else {
+      if (value === (oldValue || '')) { onCancel(); return; }
+    }
+
+    onSave(record, dataIndex, value);
+  }, [dataIndex, record, onSave, onCancel, inputRef]);
+
+  const handleKeyDown = useCallback((e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      triggerSave();
+    }
+    if (e.key === 'Escape') {
+      onCancel();
+    }
+  }, [triggerSave, onCancel]);
+
+  if (!editing || !EDITABLE_COLUMNS.has(dataIndex)) {
+    return <td {...restProps}>{children}</td>;
+  }
+
+  const isDate = dataIndex === 'transaction_date';
+  const isNumber = dataIndex === 'credit_amount' || dataIndex === 'debit_amount' || dataIndex === 'balance';
+  const isLongText = dataIndex === 'transaction_description';
+
+  let inputNode;
+  const currentValue = record[dataIndex];
+
+  if (isDate) {
+    inputNode = (
+      <DatePicker
+        ref={inputRef}
+        size="small"
+        defaultValue={currentValue ? dayjs(currentValue) : null}
+        format={DATE_FORMAT}
+        style={{ width: '100%' }}
+        onChange={() => {
+          setTimeout(() => triggerSave(), 0);
+        }}
+        onBlur={() => {
+          setTimeout(() => triggerSave(), 150);
+        }}
+        open
+        getPopupContainer={(trigger) => trigger.parentElement}
+      />
+    );
+  } else if (isNumber) {
+    inputNode = (
+      <InputNumber
+        ref={inputRef}
+        size="small"
+        defaultValue={currentValue != null ? currentValue : 0}
+        style={{ width: '100%' }}
+        onKeyDown={handleKeyDown}
+        onPressEnter={triggerSave}
+        onBlur={triggerSave}
+        min={0}
+        step={1000}
+      />
+    );
+  } else if (isLongText) {
+    inputNode = (
+      <Input.TextArea
+        ref={inputRef}
+        size="small"
+        defaultValue={currentValue || ''}
+        autoSize={{ minRows: 1, maxRows: 4 }}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            triggerSave();
+          }
+          if (e.key === 'Escape') onCancel();
+        }}
+        onBlur={triggerSave}
+      />
+    );
+  } else {
+    inputNode = (
+      <Input
+        ref={inputRef}
+        size="small"
+        defaultValue={currentValue || ''}
+        onKeyDown={handleKeyDown}
+        onBlur={triggerSave}
+      />
+    );
+  }
+
+  return (
+    <td {...restProps}>
+      <div style={{ padding: '0 2px' }}>{inputNode}</div>
+    </td>
+  );
+}
 
 export default function BankAccount() {
   const { fmt, currency } = useCurrency();
@@ -26,6 +195,55 @@ export default function BankAccount() {
   const [importing, setImporting] = useState(false);
   const [selectedRowKeys, setSelectedRowKeys] = useState([]);
   const [form] = Form.useForm();
+
+  const [editingKey, setEditingKey] = useState(null);
+  const [editingColumn, setEditingColumn] = useState(null);
+  const inputRef = useRef(null);
+
+  const isEditing = useCallback((record, column) => {
+    return record.bank_transaction_key === editingKey && column === editingColumn;
+  }, [editingKey, editingColumn]);
+
+  const startEditing = useCallback((record, column) => {
+    setEditingKey(record.bank_transaction_key);
+    setEditingColumn(column);
+    setTimeout(() => {
+      inputRef.current?.focus?.();
+    }, 50);
+  }, []);
+
+  const cancelEditing = useCallback(() => {
+    setEditingKey(null);
+    setEditingColumn(null);
+  }, []);
+
+  const saveCell = useCallback(async (record, dataIndex, newValue) => {
+    const key = record.bank_transaction_key;
+
+    let apiValue = newValue;
+    if (dataIndex === 'transaction_date') {
+      if (dayjs.isDayjs(newValue)) {
+        apiValue = newValue.format(DATE_FORMAT);
+      }
+    }
+
+    try {
+      await updateBankTransaction(key, { [dataIndex]: apiValue });
+      message.success('Updated');
+      setData(prev => ({
+        ...prev,
+        data: prev.data.map(row =>
+          row.bank_transaction_key === key ? { ...row, [dataIndex]: newValue } : row
+        ),
+      }));
+    } catch (e) {
+      message.error(e?.response?.data?.detail || 'Update failed');
+      loadData();
+    } finally {
+      setEditingKey(null);
+      setEditingColumn(null);
+    }
+  }, []);
 
   // PL Account Config modal state
   const [plAccountsVisible, setPlAccountsVisible] = useState(false);
@@ -88,7 +306,6 @@ export default function BankAccount() {
       } else {
         const msg = result.message || 'Upload thất bại';
         message.error(msg);
-        // Hiển thị full message trong modal để tránh bị rút gọn
         Modal.error({
           title: 'Upload thất bại',
           content: (
@@ -105,12 +322,10 @@ export default function BankAccount() {
         typeof detail === 'string' &&
         detail.includes('Duplicate bank transactions detected');
       if (isDuplicate) {
-        // Thông báo gọn theo yêu cầu
         message.error('Upload thất bại: duplicate. Có thể file sao kê này đã được import trước đó.');
       } else {
         const fullMessage = 'Upload thất bại: ' + detail;
         message.error(fullMessage);
-        // Hiển thị full chi tiết lỗi trong modal (không bị 3 chấm ở giữa do UI)
         Modal.error({
           title: 'Upload thất bại',
           content: (
@@ -124,7 +339,7 @@ export default function BankAccount() {
     } finally {
       setUploading(false);
     }
-    return false; // Prevent auto upload
+    return false;
   };
 
   const handleImportRow = async () => {
@@ -132,7 +347,6 @@ export default function BankAccount() {
       const values = await form.validateFields();
       setImporting(true);
 
-      // Format dates
       const rowData = {
         ...values,
         transaction_date: values.transaction_date ? values.transaction_date.format('YYYY-MM-DD') : null,
@@ -149,7 +363,6 @@ export default function BankAccount() {
       }
     } catch (error) {
       if (error.errorFields) {
-        // Form validation errors
         return;
       }
       const detail = error?.response?.data?.detail || error.message;
@@ -179,7 +392,7 @@ export default function BankAccount() {
       setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
     } else {
       setSortColumn(column);
-      setSortOrder('desc'); // Default to desc for transactions (newest first)
+      setSortOrder('desc');
     }
     setPage(1);
   };
@@ -194,7 +407,6 @@ export default function BankAccount() {
     setPage(1);
   };
 
-  // Get unique account numbers from data for filter
   const accountNumbers = useMemo(() => {
     const accounts = new Set();
     data.data.forEach(row => {
@@ -203,62 +415,121 @@ export default function BankAccount() {
     return Array.from(accounts).sort();
   }, [data.data]);
 
-  const columns = useMemo(() => {
+  const mergedColumns = useMemo(() => {
     const baseColumns = [
       {
         title: 'Ngày GD',
         dataIndex: 'transaction_date',
         key: 'transaction_date',
-        width: 90,
+        width: 110,
         sorter: true,
         sortOrder: sortColumn === 'transaction_date' ? sortOrder : null,
         onHeaderCell: () => ({
           onClick: () => handleSortChange('transaction_date'),
           style: { cursor: 'pointer', userSelect: 'none' },
         }),
+        editable: true,
+        render: (text, record) => {
+          const editing = isEditing(record, 'transaction_date');
+          return editing ? text : (
+            <span
+              onDoubleClick={() => startEditing(record, 'transaction_date')}
+              style={{ cursor: 'pointer' }}
+            >
+              {text || '—'}
+            </span>
+          );
+        },
       },
       {
         title: 'Mã GD',
         dataIndex: 'reference_number',
         key: 'reference_number',
-        width: 120,
-        ellipsis: false,
+        width: 130,
+        editable: true,
+        render: (text, record) => {
+          const editing = isEditing(record, 'reference_number');
+          return editing ? text : (
+            <span
+              onDoubleClick={() => startEditing(record, 'reference_number')}
+              style={{ cursor: 'pointer' }}
+            >
+              {text || '—'}
+            </span>
+          );
+        },
       },
       {
         title: 'Số TK',
         dataIndex: 'account_number',
         key: 'account_number',
-        width: 90,
-        ellipsis: true,
+        width: 100,
+        editable: true,
+        render: (text, record) => {
+          const editing = isEditing(record, 'account_number');
+          return editing ? text : (
+            <span
+              onDoubleClick={() => startEditing(record, 'account_number')}
+              style={{ cursor: 'pointer' }}
+            >
+              {text || '—'}
+            </span>
+          );
+        },
       },
       {
         title: 'Tên TK',
         dataIndex: 'account_name',
         key: 'account_name',
-        width: 100,
-        ellipsis: true,
+        width: 110,
+        editable: true,
+        render: (text, record) => {
+          const editing = isEditing(record, 'account_name');
+          return editing ? text : (
+            <span
+              onDoubleClick={() => startEditing(record, 'account_name')}
+              style={{ cursor: 'pointer' }}
+            >
+              {text || '—'}
+            </span>
+          );
+        },
       },
       {
         title: 'Diễn giải',
         dataIndex: 'transaction_description',
         key: 'transaction_description',
         width: 200,
-        ellipsis: false,
-        render: (text) => (
-          <div style={{
-            wordBreak: 'break-word',
-            whiteSpace: 'normal',
-            maxWidth: 200
-          }}>
-            {text || '—'}
-          </div>
-        ),
+        editable: true,
+        render: (text, record) => {
+          const editing = isEditing(record, 'transaction_description');
+          return editing ? text : (
+            <div
+              onDoubleClick={() => startEditing(record, 'transaction_description')}
+              style={{ cursor: 'pointer', wordBreak: 'break-word', whiteSpace: 'normal', maxWidth: 200 }}
+            >
+              {text || '—'}
+            </div>
+          );
+        },
       },
       {
         title: 'PL Account',
         dataIndex: 'pl_account_number',
         key: 'pl_account_number',
-        width: 70,
+        width: 90,
+        editable: true,
+        render: (text, record) => {
+          const editing = isEditing(record, 'pl_account_number');
+          return editing ? text : (
+            <span
+              onDoubleClick={() => startEditing(record, 'pl_account_number')}
+              style={{ cursor: 'pointer' }}
+            >
+              {text || '—'}
+            </span>
+          );
+        },
       },
       {
         title: 'Product Line',
@@ -266,6 +537,7 @@ export default function BankAccount() {
         key: 'product_line_name',
         width: 100,
         ellipsis: true,
+        editable: false,
       },
       {
         title: 'Product',
@@ -273,6 +545,7 @@ export default function BankAccount() {
         key: 'product_name',
         width: 100,
         ellipsis: true,
+        editable: false,
       },
       {
         title: 'Variant',
@@ -280,47 +553,108 @@ export default function BankAccount() {
         key: 'variant_name',
         width: 90,
         ellipsis: true,
+        editable: false,
       },
       {
         title: `Credit (${currency})`,
         dataIndex: 'credit_amount',
         key: 'credit_amount',
-        width: 110,
+        width: 120,
         align: 'right',
-        render: (v) => v != null ? fmt(v) : '—',
+        editable: true,
+        render: (v, record) => {
+          const editing = isEditing(record, 'credit_amount');
+          return editing ? v : (
+            <span
+              onDoubleClick={() => startEditing(record, 'credit_amount')}
+              style={{ cursor: 'pointer' }}
+            >
+              {v != null ? fmt(v) : '—'}
+            </span>
+          );
+        },
       },
       {
         title: `Debit (${currency})`,
         dataIndex: 'debit_amount',
         key: 'debit_amount',
-        width: 110,
+        width: 120,
         align: 'right',
-        render: (v) => v != null ? fmt(v) : '—',
+        editable: true,
+        render: (v, record) => {
+          const editing = isEditing(record, 'debit_amount');
+          return editing ? v : (
+            <span
+              onDoubleClick={() => startEditing(record, 'debit_amount')}
+              style={{ cursor: 'pointer' }}
+            >
+              {v != null ? fmt(v) : '—'}
+            </span>
+          );
+        },
       },
       {
         title: `Balance (${currency})`,
         dataIndex: 'balance',
         key: 'balance',
-        width: 120,
+        width: 130,
         align: 'right',
-        render: (v) => v != null ? fmt(v) : '—',
+        editable: true,
+        render: (v, record) => {
+          const editing = isEditing(record, 'balance');
+          return editing ? v : (
+            <span
+              onDoubleClick={() => startEditing(record, 'balance')}
+              style={{ cursor: 'pointer' }}
+            >
+              {v != null ? fmt(v) : '—'}
+            </span>
+          );
+        },
       },
     ];
 
-    return baseColumns.map(col => ({
-      ...col,
-      title: (
-        <Space>
-          <span>{col.title}</span>
-          {col.sortOrder && (
-            <span style={{ fontSize: 10, color: '#1890ff' }}>
-              {col.sortOrder === 'asc' ? '↑' : '↓'}
-            </span>
-          )}
-        </Space>
-      ),
-    }));
-  }, [sortColumn, sortOrder, fmt, currency]);
+    return baseColumns.map(col => {
+      if (!col.editable) {
+        return {
+          ...col,
+          title: (
+            <Space>
+              <span>{col.title}</span>
+              {col.sortOrder && (
+                <span style={{ fontSize: 10, color: '#1890ff' }}>
+                  {col.sortOrder === 'asc' ? '↑' : '↓'}
+                </span>
+              )}
+            </Space>
+          ),
+        };
+      }
+
+      return {
+        ...col,
+        onCell: (record) => ({
+          record,
+          dataIndex: col.dataIndex,
+          editing: isEditing(record, col.dataIndex),
+          onSave: saveCell,
+          onCancel: cancelEditing,
+          inputRef,
+        }),
+        title: (
+          <Space>
+            <span>{col.title}</span>
+            {col.sortOrder && (
+              <span style={{ fontSize: 10, color: '#1890ff' }}>
+                {col.sortOrder === 'asc' ? '↑' : '↓'}
+              </span>
+            )}
+            <EditOutlined style={{ fontSize: 10, color: '#bbb' }} />
+          </Space>
+        ),
+      };
+    });
+  }, [sortColumn, sortOrder, fmt, currency, editingKey, editingColumn, startEditing, isEditing, saveCell, cancelEditing]);
 
   const rowSelection = {
     selectedRowKeys,
@@ -345,7 +679,7 @@ export default function BankAccount() {
     loadPlAccounts();
   };
 
-const handleChangeCategory = async (accountNumber, category) => {
+  const handleChangeCategory = async (accountNumber, category) => {
     try {
       await updatePlAccount(accountNumber, { category });
       setPlAccounts(prev =>
@@ -512,7 +846,6 @@ const handleChangeCategory = async (accountNumber, category) => {
           loadCount();
           loadData();
         } catch (e) {
-          // eslint-disable-next-line no-console
           console.error('Delete bank transactions failed', e);
           message.error('Xóa giao dịch thất bại');
         } finally {
@@ -543,6 +876,14 @@ const handleChangeCategory = async (accountNumber, category) => {
         .bank-table-small .ant-table-tbody > tr > td {
           word-break: break-word;
         }
+        .bank-table-small .ant-table-tbody > tr > td .ant-input,
+        .bank-table-small .ant-table-tbody > tr > td .ant-input-number,
+        .bank-table-small .ant-table-tbody > tr > td .ant-picker {
+          font-size: 11px;
+        }
+        .bank-table-small .ant-table-tbody > tr > td:hover:not(.ant-table-cell-row-hover) {
+          background-color: #fafafa;
+        }
       `}</style>
       <Card
         title={
@@ -560,6 +901,9 @@ const handleChangeCategory = async (accountNumber, category) => {
                 {totalCount.toLocaleString()}
               </Text>
             </div>
+            <Text type="secondary" style={{ fontSize: 11 }}>
+              Double-click any editable cell (marked with <EditOutlined style={{ fontSize: 9 }} />) to edit inline. Press Enter to save, Escape to cancel.
+            </Text>
           </Space>
         </Card>
 
@@ -671,13 +1015,18 @@ const handleChangeCategory = async (accountNumber, category) => {
 
           <Spin spinning={loading}>
             <Table
-              columns={columns}
+              components={{
+                body: {
+                  cell: EditableCell,
+                },
+              }}
+              columns={mergedColumns}
               dataSource={data.data}
               rowKey="bank_transaction_key"
               rowSelection={rowSelection}
               size="small"
               className="bank-table-small"
-              scroll={{ x: 1200 }}
+              scroll={{ x: 1400 }}
               pagination={{
                 current: page,
                 pageSize,

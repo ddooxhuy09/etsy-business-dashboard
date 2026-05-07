@@ -61,6 +61,10 @@ export function importBankTransactionRow(row) {
   return api.post('/api/static/bank-transactions/import-row', row).then((r) => r.data);
 }
 
+export function updateBankTransaction(key, updates) {
+  return api.put(`/api/static/bank-transactions/${key}`, updates).then((r) => r.data);
+}
+
 export function deleteBankTransactions(ids) {
   // DELETE with body: { ids: [...] }
   return api
