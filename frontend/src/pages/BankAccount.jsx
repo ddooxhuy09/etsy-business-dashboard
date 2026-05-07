@@ -56,17 +56,22 @@ function EditableCell({
   inputRef,
   ...restProps
 }) {
-  const triggerSave = useCallback(() => {
+  const getValueFromInput = useCallback(() => {
     const input = inputRef?.current;
-    if (!input) return;
+    if (!input) return { value: undefined, valid: false };
 
-    let value;
     if (input instanceof HTMLInputElement || input instanceof HTMLTextAreaElement) {
-      value = input.value;
-    } else {
-      return;
+      return { value: input.value, valid: true };
     }
 
+    return { value: undefined, valid: false };
+  }, [inputRef]);
+
+  const triggerSave = useCallback(() => {
+    const { value: rawValue, valid } = getValueFromInput();
+    if (!valid) return;
+
+    let value = rawValue;
     const error = validateField(dataIndex, value);
     if (error) {
       message.error(`${dataIndex}: ${error}`);
@@ -86,7 +91,7 @@ function EditableCell({
     }
 
     onSave(record, dataIndex, value);
-  }, [dataIndex, record, onSave, onCancel, inputRef]);
+  }, [dataIndex, record, onSave, onCancel, getValueFromInput]);
 
   const handleKeyDown = useCallback((e) => {
     if (e.key === 'Enter') {
@@ -117,14 +122,10 @@ function EditableCell({
         defaultValue={currentValue ? dayjs(currentValue) : null}
         format={DATE_FORMAT}
         style={{ width: '100%' }}
-        onChange={() => {
-          setTimeout(() => triggerSave(), 0);
-        }}
-        onBlur={() => {
-          setTimeout(() => triggerSave(), 150);
-        }}
+        onChange={triggerSave}
         open
         getPopupContainer={(trigger) => trigger.parentElement}
+        onKeyDown={handleKeyDown}
       />
     );
   } else if (isNumber) {
@@ -135,8 +136,6 @@ function EditableCell({
         defaultValue={currentValue != null ? currentValue : 0}
         style={{ width: '100%' }}
         onKeyDown={handleKeyDown}
-        onPressEnter={triggerSave}
-        onBlur={triggerSave}
         min={0}
         step={1000}
       />
@@ -155,7 +154,6 @@ function EditableCell({
           }
           if (e.key === 'Escape') onCancel();
         }}
-        onBlur={triggerSave}
       />
     );
   } else {
@@ -165,14 +163,37 @@ function EditableCell({
         size="small"
         defaultValue={currentValue || ''}
         onKeyDown={handleKeyDown}
-        onBlur={triggerSave}
       />
     );
   }
 
   return (
     <td {...restProps}>
-      <div style={{ padding: '0 2px' }}>{inputNode}</div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+        <div style={{ flex: 1 }}>{inputNode}</div>
+        <Space size={2} style={{ flexShrink: 0 }}>
+          <Button
+            type="link"
+            size="small"
+            icon={<CheckOutlined />}
+            style={{ color: '#52c41a', padding: '0 2px', minWidth: 18, height: 18 }}
+            onClick={(e) => {
+              e.stopPropagation();
+              triggerSave();
+            }}
+          />
+          <Button
+            type="link"
+            size="small"
+            icon={<CloseOutlined />}
+            style={{ color: '#ff4d4f', padding: '0 2px', minWidth: 18, height: 18 }}
+            onClick={(e) => {
+              e.stopPropagation();
+              onCancel();
+            }}
+          />
+        </Space>
+      </div>
     </td>
   );
 }
